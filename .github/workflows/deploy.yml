@@ -1,0 +1,71 @@
+# CD（开发文档 10.3）：CI 通过后自动部署 staging；prod 需人工审批后手动触发
+#
+# 依赖仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   SSH_HOST     目标服务器地址
+#   SSH_USER     SSH 用户
+#   SSH_KEY      SSH 私钥（对应公钥已加入服务器 authorized_keys）
+#   DEPLOY_PATH  服务器上本仓库的部署目录（含 docker-compose.yml）
+name: Deploy
+
+on:
+  # staging：CI 在 main 上成功后自动部署
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # prod：手动触发（受 environment: production 人工审批保护）
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 目标环境
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+concurrency:
+  group: deploy-${{ github.event_name == 'workflow_run' && 'staging' || inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: 部署 staging（自动）
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: SSH 发布
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch --all
+            git pull --ff-only origin main
+            docker compose build
+            docker compose up -d
+            docker image prune -f
+
+  prod:
+    name: 部署 prod（人工审批）
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    # 在仓库 Settings → Environments 为 production 配置 Required reviewers
+    environment: production
+    steps:
+      - name: SSH 发布
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch --all
+            git pull --ff-only origin main
+            docker compose build
+            docker compose up -d
+            docker image prune -f

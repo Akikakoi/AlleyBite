@@ -1,0 +1,181 @@
+# AlleyBite 单机部署（文档 10.2）
+# 用法：
+#   1) cp .env.example .env 并按需填写密钥（LLM_API_KEY / AMAP_API_KEY / CORS_ORIGINS）
+#   2) sh deploy/certs/gen-self-signed.sh   # 生成本地自签证书（生产替换为正式证书）
+#   3) docker compose up -d --build
+#   4) 访问 https://localhost/ （自签证书浏览器会提示不受信任，属预期）
+#
+# 服务：postgres / redis / api / scheduler / web(nginx 托管前端并反代 /api)
+#       prometheus / alertmanager / alert-bridge(飞书) / grafana（文档 10.4 监控告警）
+name: alleybite
+
+x-api-environment: &api-environment
+  TZ: Asia/Shanghai
+  DEBUG: "false"
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-alleybite}:${POSTGRES_PASSWORD:-alleybite}@postgres:5432/${POSTGRES_DB:-alleybite}
+  REDIS_URL: redis://redis:6379/0
+  SNAPSHOT_DIR: /data/snapshots
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-dashscope}
+  LLM_MODEL: ${LLM_MODEL:-qwen-plus}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+  LLM_TIMEOUT: ${LLM_TIMEOUT:-60}
+  AMAP_API_KEY: ${AMAP_API_KEY:-}
+  AMAP_KEYWORDS: ${AMAP_KEYWORDS:-美食,川菜,火锅,面馆,烧烤,小吃,家常菜,串串}
+  CRAWL_CONTACT: ${CRAWL_CONTACT:-}
+  CRAWL_RSS_URLS: ${CRAWL_RSS_URLS:-}
+  CRAWL_HTML_LIST_URLS: ${CRAWL_HTML_LIST_URLS:-}
+  SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
+  SCHEDULE_CITIES: ${SCHEDULE_CITIES:-}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alleybite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alleybite}
+      POSTGRES_DB: ${POSTGRES_DB:-alleybite}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      <<: *api-environment
+    volumes:
+      - snapshots:/data/snapshots
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ./backend
+    command: ["python", "scripts/scheduler.py"]
+    environment:
+      <<: *api-environment
+    volumes:
+      - snapshots:/data/snapshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- 监控与告警（文档 10.4）---------------------------------------------
+  # 仅绑定回环地址，运维经 SSH 隧道/VPN 访问，不直接对公网暴露。
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      # 经 nginx /prometheus/ 子路径对外反代（文档 10.4）
+      - "--web.external-url=/prometheus/"
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      # 经 nginx /alertmanager/ 子路径对外反代（文档 10.4）
+      # 注：Alertmanager 要求 external-url 必须含 http(s) scheme
+      - "--web.external-url=${PUBLIC_BASE_URL:-https://localhost}/alertmanager/"
+    volumes:
+      - ./deploy/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanagerdata:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    restart: unless-stopped
+
+  # Alertmanager → 飞书 告警桥（复用后端镜像，纯标准库）
+  alert-bridge:
+    build:
+      context: ./backend
+    command: ["python", "scripts/alert_webhook_bridge.py"]
+    environment:
+      PORT: "8080"
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+      TZ: Asia/Shanghai
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-alleybite}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # 经 nginx /grafana/ 子路径对外反代（文档 10.4）
+      GF_SERVER_ROOT_URL: ${PUBLIC_BASE_URL:-https://localhost}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # 证书目录：本地自签 / 生产正式证书，替换文件即可
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  snapshots:
+  promdata:
+  alertmanagerdata:
+  grafanadata:

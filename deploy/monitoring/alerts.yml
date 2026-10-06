@@ -1,0 +1,149 @@
+# 告警规则（严格对齐开发文档 10.4 的阈值表）
+# 指标定义见 backend/app/services/metrics.py
+groups:
+  - name: alleybite-crawl
+    rules:
+      - alert: CrawlSuccessRateLow
+        expr: min by (source) (alleybite_crawl_success_ratio) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "采集成功率低于 70%（{{ $labels.source }}）"
+          description: "近 10 分钟该方法源采集成功率 {{ $value | humanizePercentage }}，低于阈值 70%。"
+
+      - alert: CrawlHttp403High
+        expr: alleybite_crawl_http_403_ratio > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "目标站点 403 比例过高（{{ $labels.source }}）"
+          description: "403 占比 {{ $value | humanizePercentage }}，可能有反爬或需调整采集策略。"
+
+      - alert: CrawlHttp429High
+        expr: alleybite_crawl_http_429_ratio > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "目标站点 429 限流比例过高（{{ $labels.source }}）"
+          description: "429 占比 {{ $value | humanizePercentage }}，请降低 QPS。"
+
+      - alert: CrawlBreakerOpen
+        expr: alleybite_crawl_breaker_open > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "采集熔断已触发（{{ $labels.source }}）"
+          description: "该方法源因连续 403/429 已暂停采集，等待冷却。"
+
+      - alert: CrawlSourceStale
+        expr: time() - alleybite_crawl_source_last_run_timestamp > 172800 and alleybite_crawl_source_last_run_timestamp > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "数据源超过 48 小时未采集（{{ $labels.source }}）"
+          description: "最近一次采集完成于 {{ $value | humanizeDuration }} 前。"
+
+  - name: alleybite-extract
+    rules:
+      - alert: ExtractFailureRateHigh
+        expr: alleybite_extract_failure_ratio > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "内容抽取失败率超过 5%"
+          description: "当前失败率 {{ $value | humanizePercentage }}（含 LLM 与 JSON 解析失败）。"
+
+      # 注：LLM 调用失败与 JSON 解析失败最终都会落到上面的抽取失败率，
+      # 故不再单独依赖进程内计数器（批量任务进程退出后计数会归零）。
+      - alert: ExtractChunkFailureRateHigh
+        expr: alleybite_extract_chunk_failure_ratio > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "切块抽取失败率超过 5%"
+          description: "当前切块失败率 {{ $value | humanizePercentage }}。"
+
+  - name: alleybite-data
+    rules:
+      - alert: MentionMissingAddressHigh
+        expr: alleybite_mention_missing_address_ratio > 0.2
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "mention 无地址率超过 20%"
+          description: "当前无地址率 {{ $value | humanizePercentage }}，影响实体对齐与地图展示。"
+
+      - alert: DailyMentionAnomaly
+        expr: alleybite_mention_new_24h < 1 and (alleybite_extract_failure_ratio > 0 or
+          sum(alleybite_http_requests_total) > 0)
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "近 24 小时无新增 mention"
+          description: "采集或抽取链路可能中断，请检查 scheduler 与数据源状态。"
+
+  - name: alleybite-service
+    rules:
+      - alert: ApiP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(alleybite_http_request_duration_seconds_bucket[5m]))
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API P95 延迟超过 800ms"
+          description: "当前 P95 约 {{ $value | humanizeDuration }}。"
+
+      - alert: ApiErrorRateHigh
+        expr: |
+          sum(rate(alleybite_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(alleybite_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 5xx 错误率超过 5%"
+          description: "当前错误率 {{ $value | humanizePercentage }}。"
+
+      - alert: ApiTargetDown
+        expr: up{job="alleybite-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "后端 API 抓取目标不可达"
+          description: "Prometheus 连续 2 分钟无法抓取 api:8000/metrics。"
+
+  - name: alleybite-cost
+    rules:
+      # 阈值按预算调整：默认 24h LLM token 预算 500 万、地图调用配额 8 万次，达 80% 告警。
+      # 指标由 job_run.stats 汇总，跨进程/批量任务均可见（见 metrics.py）。
+      - alert: LlmTokenBudgetHigh
+        expr: sum(alleybite_llm_tokens_24h) > 4e6
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM token 用量达预算 80%"
+          description: "近 24 小时用量 {{ $value | humanize }} tokens，请核对成本预算。"
+
+      - alert: AmapQuotaHigh
+        expr: alleybite_amap_requests_24h > 64000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "高德地图 API 调用量达配额 80%"
+          description: "近 24 小时调用 {{ $value | humanize }} 次，请核对配额。"

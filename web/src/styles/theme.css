@@ -1,0 +1,107 @@
+/* UI 规范（文档 9.3）：主色暖橙、辅色墨绿、卡片圆角 16px、磨砂玻璃、移动优先 */
+
+:root {
+  --color-primary: #ff6b35;
+  --color-primary-soft: rgba(255, 107, 53, 0.12);
+  --color-secondary: #2f4f4f;
+  --color-bg: #f7f5f2;
+  --color-surface: rgba(255, 255, 255, 0.82);
+  --color-surface-solid: #ffffff;
+  --color-border: rgba(38, 34, 31, 0.08);
+  --color-text: #26221f;
+  --color-text-sub: #7a736c;
+  --color-good: #3fa36b;
+  --color-good-soft: rgba(63, 163, 107, 0.12);
+  --color-warn: #d99a2b;
+  --color-warn-soft: rgba(217, 154, 43, 0.14);
+
+  --radius-card: 16px;
+  --radius-tag: 999px;
+  --font-title: 17px;
+  --font-body: 14px;
+  --font-hint: 12px;
+  --shadow-card: 0 6px 20px rgba(38, 34, 31, 0.08);
+  --page-pad: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-body);
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.page {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--page-pad) 32px;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.text-sub {
+  color: var(--color-text-sub);
+  font-size: var(--font-hint);
+}
+
+/* 榜单列表：移动优先，≥768 两列，≥1200 三列（文档 9.3 响应式） */
+.list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .list-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .list-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --page-pad: 24px;
+  }
+}

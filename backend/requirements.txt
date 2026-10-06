@@ -1,0 +1,15 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+openai>=1.54
+httpx>=0.27
+sqlalchemy>=2.0
+opencc-python-reimplemented>=0.1.7
+# 生产 PostgreSQL 驱动（文档 10.2 / 7；本地 SQLite 不需要）
+psycopg[binary]>=3.2
+# 榜单缓存（可选）：未安装时自动降级为直读库内快照
+redis>=5.0
+# 监控指标（文档 10.4）：/metrics 暴露 Prometheus 指标
+prometheus-client>=0.21
+pytest>=8.3

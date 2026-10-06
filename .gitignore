@@ -1,0 +1,32 @@
+# ---- 环境变量与密钥（务必不要提交）----
+.env
+*.env.local
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- 本地数据库 ----
+*.db
+*.db-journal
+
+# ---- Node / 前端 ----
+node_modules/
+web/dist/
+
+# ---- 部署产物与自签证书 ----
+deploy/certs/*.crt
+deploy/certs/*.key
+deploy/backup/*.sql
+deploy/backup/*.dump
+deploy/backup/*.gz
+
+# ---- 日志与系统文件 ----
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,18 @@
+# Alertmanager 路由（文档 10.4）
+# 统一投递到本地飞书桥服务 alert-bridge，由其转换为飞书机器人消息。
+# 挂载到容器 /etc/alertmanager/alertmanager.yml
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: feishu-webhook
+  group_by: ["alertname", "source"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: feishu-webhook
+    webhook_configs:
+      - url: http://alert-bridge:8080/alert
+        send_resolved: true
