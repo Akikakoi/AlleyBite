@@ -32,6 +32,19 @@ x-api-environment: &api-environment
 services:
   postgres:
     image: postgres:15-alpine
+    # WAL 增量归档（文档 10.5）：archive_mode 开启后每个 WAL 段落实时落到 pgwal 卷；
+    # 配合每日逻辑全量（deploy/backup/pg_backup.sh）与每周物理基线
+    # （deploy/backup/pg_base_backup.sh），可恢复到 14 天内任意时间点（PITR）。
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "archive_timeout=300"
+      - "-c"
+      - "archive_command=mkdir -p /var/lib/postgresql/wal-archive && test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alleybite}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alleybite}
@@ -39,6 +52,9 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # 挂在镜像已有的 /var/lib/postgresql（属主为 postgres），归档子目录 wal-archive
+      # 由 postgres 运行时创建；若直接挂到不存在的子路径，卷根会是 root 属主导致写失败。
+      - pgwal:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -174,6 +190,7 @@ services:
 
 volumes:
   pgdata:
+  pgwal:
   redisdata:
   snapshots:
   promdata:

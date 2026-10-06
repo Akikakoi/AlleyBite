@@ -25,6 +25,8 @@ deploy/certs/*.key
 deploy/backup/*.sql
 deploy/backup/*.dump
 deploy/backup/*.gz
+# 备份脚本默认输出目录（BACKUP_DIR 默认 ./backups），防止备份文件被误提交
+/backups/
 
 # ---- 日志与系统文件 ----
 *.log
