@@ -152,6 +152,35 @@ def test_hard_rule_street_address_not_excluded():
     assert apply_hard_rules(signals, make_settings()).excluded is False
 
 
+def test_hard_rule_mall_center_variants_exclude():
+    """具名商业体变体（金融国际中心/华商中心）应剔除：只写"金融中心"匹配不到前者。"""
+    for addr in (
+        "天府大道北段966号天府金融国际中心北塔11号楼4层",
+        "交子大道33号华商中心3层",
+    ):
+        signals = ShopSignals(
+            shop_key="r:m", display_name="某店", mention_count=3,
+            independent_source_count=3, latest_at=NOW, address=addr,
+        )
+        rules = apply_hard_rules(signals, make_settings())
+        assert rules.excluded is True, addr
+        assert "商场" in rules.reason
+
+
+def test_hard_rule_street_shop_near_center_not_excluded():
+    """含"中心"但属街边店的地址不得误杀（地铁站名 / 隔邻单位 / 底商）。"""
+    for addr in (
+        "体育东路39号(体育中心地铁站D3口步行450米)",
+        "麓景路151号九阳阳光服务中心隔壁",
+        "凤城七路旭辉中心底商",
+    ):
+        signals = ShopSignals(
+            shop_key="r:s", display_name="某店", mention_count=3,
+            independent_source_count=3, latest_at=NOW, address=addr,
+        )
+        assert apply_hard_rules(signals, make_settings()).excluded is False, addr
+
+
 def test_default_chain_blacklist_hits_national_chain():
     signals = ShopSignals(
         shop_key="r:3", display_name="点都德(北京路贰店)", mention_count=3,
