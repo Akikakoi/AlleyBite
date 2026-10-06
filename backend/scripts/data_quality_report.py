@@ -115,7 +115,15 @@ def duplicate_rate(session, settings) -> dict:
 
 
 def field_completeness(session) -> dict:
-    """口径 2：抽取字段完整率 = 三字段齐全的 mention / mention 总数。"""
+    """口径 2：抽取字段完整率 = 三字段齐全的 mention / mention 总数。
+
+    地址口径：定位信息在 schema 中拆为两列 —— address_text（门牌/地标）与
+    area（行政区/商圈），且抽取 prompt 会把"在锦江区"这类区域描述归入 area
+    （address_text 记 null）。故"地址完整"= address_text 或 area 至少其一有值；
+    若只认 address_text，会把只给到区域的口碑误判为字段缺失。
+
+    菜名口径：dishes 非空；情绪口径：sentiment 非空。
+    """
     mentions = session.scalars(
         select(Mention).where(Mention.restaurant_id.is_not(None))
     ).all()
@@ -124,7 +132,9 @@ def field_completeness(session) -> dict:
     complete = 0
     for row in mentions:
         hits = {
-            "address_text": bool((row.address_text or "").strip()),
+            "address_text|area": bool(
+                (row.address_text or "").strip() or (row.area or "").strip()
+            ),
             "dishes": bool(row.dishes),
             "sentiment": bool((row.sentiment or "").strip()),
         }

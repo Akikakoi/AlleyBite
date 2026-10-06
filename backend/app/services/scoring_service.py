@@ -75,6 +75,7 @@ def collect_shop_scores(
 
     aligned: dict[int, list[MentionFact]] = {}
     aligned_restaurants: dict[int, Restaurant] = {}
+    aligned_address: dict[int, str] = {}
     unaligned: dict[str, list[MentionFact]] = {}
     for row in session.scalars(stmt).all():
         fact = _fact_from_row(row)
@@ -83,6 +84,11 @@ def collect_shop_scores(
                 continue
             aligned.setdefault(row.restaurant_id, []).append(fact)
             aligned_restaurants[row.restaurant_id] = row.restaurant
+            # restaurant.address 多为空，地址实际落在 mention 上；取其作商场店判定依据
+            if not aligned_address.get(row.restaurant_id):
+                addr = (row.address_text or row.area or "").strip()
+                if addr:
+                    aligned_address[row.restaurant_id] = addr
         else:
             unaligned.setdefault(normalize_shop_name(row.shop_name_raw), []).append(fact)
 
@@ -96,6 +102,7 @@ def collect_shop_scores(
             avg_price=restaurant.avg_price,
             display_name=restaurant.name,
             city_hint=restaurant.city.name if restaurant.city else None,
+            address=restaurant.address or aligned_address.get(restaurant_id) or None,
         )
         result = score_shop(signals, settings=settings, now=now)
         result.restaurant_id = restaurant_id
@@ -137,6 +144,14 @@ def score_one_restaurant(
         .order_by(MentionRow.id)
     ).all()
 
+    address = restaurant.address
+    if not address:
+        for row in rows:
+            addr = (row.address_text or row.area or "").strip()
+            if addr:
+                address = addr
+                break
+
     signals = aggregate_shop(
         f"restaurant:{restaurant_id}",
         [_fact_from_row(row) for row in rows],
@@ -144,6 +159,7 @@ def score_one_restaurant(
         avg_price=restaurant.avg_price,
         display_name=restaurant.name,
         city_hint=restaurant.city.name if restaurant.city else None,
+        address=address,
     )
     result = score_shop(signals, settings=settings, now=now)
     result.restaurant_id = restaurant_id

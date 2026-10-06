@@ -131,6 +131,37 @@ def test_hard_rule_chain_blacklist_excludes():
     assert "黑名单" in rules.reason
 
 
+def test_hard_rule_mall_address_excludes():
+    signals = ShopSignals(
+        shop_key="r:1", display_name="龙森园火锅", mention_count=3,
+        independent_source_count=3, latest_at=NOW,
+        address="交子大道33号中国华商金融中心T1座3楼",
+    )
+    rules = apply_hard_rules(signals, make_settings())
+    assert rules.excluded is True
+    assert "商场" in rules.reason
+    assert score_shop(signals, settings=make_settings(), now=NOW).score == 0.0
+
+
+def test_hard_rule_street_address_not_excluded():
+    signals = ShopSignals(
+        shop_key="r:2", display_name="小灶恰鱼·浏阳土菜", mention_count=3,
+        independent_source_count=3, latest_at=NOW,
+        address="望岳街道府后路社区道坡小区3栋5单元1层",
+    )
+    assert apply_hard_rules(signals, make_settings()).excluded is False
+
+
+def test_default_chain_blacklist_hits_national_chain():
+    signals = ShopSignals(
+        shop_key="r:3", display_name="点都德(北京路贰店)", mention_count=3,
+        independent_source_count=3, latest_at=NOW,
+    )
+    rules = apply_hard_rules(signals, make_settings())
+    assert rules.excluded is True
+    assert "黑名单" in rules.reason
+
+
 def test_hard_rule_burst_halves_score():
     facts = [
         MentionFact(

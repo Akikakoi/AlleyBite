@@ -124,6 +124,7 @@ class ShopSignals:
     hygiene_count: int = 0
     burst: bool = False
     map_category: str | None = None
+    address: str | None = None
     facts: list[MentionFact] = field(default_factory=list)
 
 
@@ -167,6 +168,13 @@ class HardRuleResult(BaseModel):
 
 # --- 硬规则（6.3） ----------------------------------------------------------
 
+def is_mall_address(address: str | None, settings: Settings) -> bool:
+    """POI 地址是否指向商场/写字楼内店铺（1.5 定义中"非商场店"的反例）。"""
+    if not address:
+        return False
+    return any(kw in address for kw in settings.mall_address_list)
+
+
 def apply_hard_rules(signals: ShopSignals, settings: Settings) -> HardRuleResult:
     ad_ratio = (
         signals.ad_mention_count / signals.mention_count if signals.mention_count else 0.0
@@ -177,6 +185,9 @@ def apply_hard_rules(signals: ShopSignals, settings: Settings) -> HardRuleResult
     for brand in settings.chain_brand_list:
         if brand and brand in signals.display_name:
             return HardRuleResult(excluded=True, reason=f"命中连锁品牌黑名单：{brand}")
+
+    if is_mall_address(signals.address, settings):
+        return HardRuleResult(excluded=True, reason="POI 地址为商场/写字楼内店铺")
 
     if signals.map_category and signals.map_category in settings.chain_category_list:
         return HardRuleResult(excluded=True, reason=f"地图分类为{signals.map_category}")
@@ -344,6 +355,7 @@ def aggregate_shop(
     map_category: str | None = None,
     display_name: str | None = None,
     city_hint: str | None = None,
+    address: str | None = None,
 ) -> ShopSignals:
     """把同一店铺的 mention 事实聚合为信号。
 
@@ -411,5 +423,6 @@ def aggregate_shop(
         hygiene_count=hygiene_count,
         burst=_has_burst(facts, settings),
         map_category=map_category,
+        address=address,
         facts=list(facts),
     )

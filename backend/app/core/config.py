@@ -57,7 +57,16 @@ class Settings(BaseSettings):
     score_burst_window_days: int = 7          # 刷评窗口（天）
     score_burst_min_mentions: int = 20        # 同平台同质好评 ≥ 该条数 → 降权 50%
     score_chain_categories: str = "购物中心内,连锁快餐"  # 地图分类剔除名单（逗号分隔）
-    chain_brand_blacklist: str = ""           # 连锁品牌黑名单（逗号分隔）
+    # 连锁品牌黑名单（逗号分隔）：命中店铺名即剔除。默认收录全国性连锁品牌
+    chain_brand_blacklist: str = (
+        "点都德,广州酒家,太平馆,遇见小面,摩打食堂,文通冰室,蜀大侠,马旺子,大碗先生,"
+        "吃饭皇帝大,十八梯邓凳面,海底捞,西贝,肯德基,麦当劳,星巴克,瑞幸,喜茶,蜜雪冰城"
+    )
+    # 商场/写字楼内店铺：POI 地址命中以下关键词即剔除（1.5 定义明确排除"商场店"）
+    score_mall_address_keywords: str = (
+        "购物中心,广场,大厦,商场,百货,太古里,SKP,悠方,合生汇,熙地港,花园城,大魔方,"
+        "金融中心,城壹汇,五月花,星悦荟,捷登都,动漫星城,鎏嘉码头"
+    )
 
     # 实体对齐（文档 5.5）
     align_match_threshold: float = 0.85      # 综合相似度 ≥ 该值 → 归并为同一 restaurant
@@ -143,6 +152,10 @@ class Settings(BaseSettings):
     @property
     def chain_category_list(self) -> list[str]:
         return [s.strip() for s in self.score_chain_categories.split(",") if s.strip()]
+
+    @property
+    def mall_address_list(self) -> list[str]:
+        return [s.strip() for s in self.score_mall_address_keywords.split(",") if s.strip()]
 
     @property
     def has_amap(self) -> bool:
