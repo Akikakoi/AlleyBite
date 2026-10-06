@@ -100,6 +100,29 @@ class Settings(BaseSettings):
     # 美食检索关键词（逗号分隔），逐个检索后按 poi_id 去重，用于扩量 POI 实体基准
     amap_keywords: str = "美食,川菜,火锅,面馆,烧烤,小吃,家常菜,串串"
 
+    # 纠错/举报（文档 9.3 / 14 章合规验收）：免登录提交，按 IP 哈希限流
+    feedback_rate_limit_max: int = 5            # 单 IP 窗口内最多提交条数
+    feedback_rate_limit_window_minutes: int = 60
+    feedback_content_max_len: int = 500         # 纠错正文长度上限
+    feedback_ip_salt: str = "alleybite"         # IP 哈希加盐，避免明文/裸哈希留存
+
+    # 分享预览（文档 9.4 / 14 章验收）：爬虫 UA 分流后由此渲染动态 og 元信息
+    share_base_url: str = ""                    # 对外访问基址；留空则由请求头推导
+    share_og_image: str = "/og-default.jpg"     # 默认分享图；绝对 URL 原样输出
+    share_site_name: str = "苍蝇馆子美食发现器"
+
+    # 管理后台（文档 9.5）：独立登录 + 独立令牌签名，与 C 端鉴权隔离
+    admin_username: str = "admin"
+    admin_password: str = ""                    # 首次启动用于初始化超管；留空则不初始化
+    admin_token_secret: str = ""                # 令牌签名密钥；留空时回退到 feedback_ip_salt
+    admin_token_ttl_minutes: int = 120          # 令牌有效期（分钟）
+    admin_password_iterations: int = 200_000    # PBKDF2 迭代次数
+
+    @property
+    def admin_token_key(self) -> str:
+        """管理后台令牌签名密钥：显式配置优先，否则回退到既有加盐串。"""
+        return self.admin_token_secret or self.feedback_ip_salt
+
     @property
     def cors_origin_list(self) -> list[str]:
         """CORS 白名单（文档 10.2）；debug 且未显式配置时全放行。"""
@@ -148,6 +171,47 @@ class Settings(BaseSettings):
         if self.crawl_night_start <= self.crawl_night_end:
             return self.crawl_night_start <= hour < self.crawl_night_end
         return hour >= self.crawl_night_start or hour < self.crawl_night_end
+
+
+# 上线前必须替换的弱默认密钥（文档 11 章 安全与合规）：生产环境命中即拒绝启动。
+WEAK_SECRET_VALUES = {"", "alleybite", "change-me", "changeme", "secret", "test-secret"}
+MIN_SECRET_LEN = 16
+
+
+class InsecureConfigError(RuntimeError):
+    """生产环境使用弱默认密钥，拒绝启动（文档 11 章）。"""
+
+
+def _is_weak_secret(value: str) -> bool:
+    value = value.strip()
+    return value.lower() in WEAK_SECRET_VALUES or len(value) < MIN_SECRET_LEN
+
+
+def assert_secure_secrets(settings: Settings) -> None:
+    """生产环境（debug=False）强校验关键密钥，命中弱默认值则拒绝启动。
+
+    - FEEDBACK_IP_SALT：IP 哈希加盐，同时是 ADMIN_TOKEN_SECRET 留空时的回退签名密钥
+    - ADMIN_TOKEN_SECRET：管理后台令牌签名密钥（留空则回退到上面的加盐串）
+
+    debug=True（本地开发/测试）不做限制，保证开箱即跑；生产漏改默认值即启动失败，
+    避免令牌可被伪造、IP 哈希可被反推。
+    """
+    if settings.debug:
+        return
+    problems = [
+        name
+        for name, value in (
+            ("FEEDBACK_IP_SALT", settings.feedback_ip_salt),
+            ("ADMIN_TOKEN_SECRET", settings.admin_token_key),
+        )
+        if _is_weak_secret(value)
+    ]
+    if problems:
+        raise InsecureConfigError(
+            "生产环境（DEBUG=false）检测到弱默认密钥："
+            + "、".join(problems)
+            + f"。请在 .env 中改为长度 ≥ {MIN_SECRET_LEN} 的随机串后再启动。"
+        )
 
 
 @lru_cache

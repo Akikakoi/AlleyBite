@@ -1,15 +1,45 @@
+from .admin_auth import (
+    AdminAuthError,
+    authenticate,
+    ensure_bootstrap_admin,
+    hash_password,
+    issue_token,
+    set_admin_password,
+    verify_password,
+    verify_token,
+)
+from .admin_service import (
+    FEEDBACK_STATUSES,
+    crawl_overview,
+    list_restaurants_admin,
+    pending_reviews_detail,
+    update_feedback_status,
+)
 from .alignment import (
     AlignmentRunResult,
+    add_manual_alias,
     align_mentions,
     confirm_review,
     get_or_create_city,
     list_pending_reviews,
+    merge_restaurants,
+    reject_review,
+    set_restaurant_status,
 )
+from .audit import list_audit, write_audit
 from .chunker import Chunk, chunk_text, chunk_with_spans, estimate_tokens
 from .cleaner import CleanReport, clean_text
 from .cache import RankCache, make_rank_cache
 from .extract_pipeline import ExtractionRunResult, extract_raw_content
 from .extractor import Extractor
+from .feedback_service import (
+    FEEDBACK_TYPES,
+    FeedbackRateLimited,
+    create_feedback,
+    hash_ip,
+    list_feedback,
+    recent_feedback_count,
+)
 from .ingest import compute_content_hash, get_raw_content, ingest_raw_content
 from .llm_client import LLMClient
 from .normalize import (
@@ -35,23 +65,38 @@ from .scoring import (
     score_shop,
 )
 from .scoring_service import collect_shop_scores, score_one_restaurant
+from .share_render import (
+    absolute_url,
+    rank_share_text,
+    render_share_html,
+    resolve_base_url,
+    resolve_og_image,
+    restaurant_share_text,
+)
 
 __all__ = [
+    "AdminAuthError",
     "AlignmentRunResult",
     "Chunk",
     "CleanReport",
     "ExtractionRunResult",
     "Extractor",
     "FEATURE_WEIGHTS",
+    "FEEDBACK_STATUSES",
+    "FEEDBACK_TYPES",
+    "FeedbackRateLimited",
     "LLMClient",
     "MentionFact",
     "RankCache",
     "ShopScore",
     "ShopSignals",
+    "absolute_url",
     "address_similarity",
     "address_tokens",
+    "add_manual_alias",
     "aggregate_shop",
     "align_mentions",
+    "authenticate",
     "build_rank_snapshot",
     "build_restaurant_detail",
     "build_restaurant_sources",
@@ -61,21 +106,45 @@ __all__ = [
     "collect_shop_scores",
     "compute_content_hash",
     "confirm_review",
+    "crawl_overview",
+    "create_feedback",
+    "ensure_bootstrap_admin",
     "estimate_tokens",
     "extract_raw_content",
     "get_latest_snapshot",
     "get_or_create_city",
     "get_rank",
     "get_raw_content",
+    "hash_ip",
+    "hash_password",
     "ingest_raw_content",
+    "issue_token",
+    "list_audit",
     "list_cities",
     "list_city_names",
+    "list_feedback",
     "list_pending_reviews",
+    "list_restaurants_admin",
     "make_rank_cache",
+    "merge_restaurants",
     "name_similarity",
     "normalize_shop_name",
+    "pending_reviews_detail",
+    "rank_share_text",
+    "recent_feedback_count",
+    "reject_review",
+    "render_share_html",
+    "resolve_base_url",
+    "resolve_og_image",
+    "restaurant_share_text",
     "run_all_cities",
     "run_city_pipeline",
     "score_one_restaurant",
     "score_shop",
+    "set_admin_password",
+    "set_restaurant_status",
+    "update_feedback_status",
+    "verify_password",
+    "verify_token",
+    "write_audit",
 ]

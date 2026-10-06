@@ -1,0 +1,60 @@
+:root {
+  /* 主题色（文档规范）：主色暖橙 #FF6B35，辅色墨绿 #2F4F4F */
+  --el-color-primary: #ff6b35;
+  --el-color-primary-light-3: #ff8d63;
+  --el-color-primary-light-5: #ffa88a;
+  --el-color-primary-light-7: #ffc4b0;
+  --el-color-primary-light-8: #ffd2c2;
+  --el-color-primary-light-9: #ffe9e1;
+  --el-color-primary-dark-2: #cc562a;
+
+  --ab-ink: #2f4f4f;
+  --ab-ink-soft: #4a6b6b;
+  --ab-bg: #f6f7f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', Arial, sans-serif;
+  color: var(--ab-ink);
+  background: var(--ab-bg);
+}
+
+.ab-page {
+  padding: 16px 20px;
+}
+
+.ab-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ab-toolbar__spacer {
+  flex: 1;
+}
+
+.ab-json {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

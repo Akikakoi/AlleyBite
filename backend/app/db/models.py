@@ -259,6 +259,34 @@ class AlignmentReview(Base):
     candidate_restaurant: Mapped[Optional[Restaurant]] = relationship()
 
 
+class Feedback(Base):
+    """店铺纠错/举报工单（文档 9.3 纠错入口 / 9.5 反馈处理 / 14 章合规验收）。
+
+    - 免登录提交，故只落 ip_hash（加盐 SHA-256），不存原始 IP 等个人信息
+    - restaurant_id 置空保留工单，店铺被合并/下架也不丢反馈
+    """
+
+    __tablename__ = "feedback"
+    __table_args__ = (Index("ix_feedback_ip_created", "ip_hash", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    restaurant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("restaurant.id", ondelete="SET NULL"), index=True
+    )
+    # info（信息有误）| closed（已关停）| label（标签不当）| other（其他）
+    type: Mapped[str] = mapped_column(String(16), default="info")
+    content: Mapped[str] = mapped_column(Text)
+    contact: Mapped[str | None] = mapped_column(String(128))
+    # pending | processing | resolved | rejected
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    restaurant: Mapped[Optional[Restaurant]] = relationship()
+
+
 class JobRun(Base):
     """采集/流水线任务运行记录（文档 7.2）。"""
 
@@ -280,3 +308,41 @@ class JobRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
     city: Mapped[Optional[City]] = relationship()
+
+
+class AdminUser(Base):
+    """管理后台账号（文档 9.5）：独立于 C 端，口令以 PBKDF2 哈希存储。"""
+
+    __tablename__ = "admin_user"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    # superadmin | operator | reviewer（RBAC 细分留 M3/M4，本期仅区分是否可写）
+    role: Mapped[str] = mapped_column(String(16), default="operator")
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AdminAuditLog(Base):
+    """管理后台写操作审计日志（文档 9.5）：操作人、动作、目标与前后值。
+
+    仅存 ip_hash（加盐 SHA-256），不落原始 IP，符合"无个人信息入库"。
+    """
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operator: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(32))
+    target_id: Mapped[str | None] = mapped_column(String(64))
+    before: Mapped[dict | None] = mapped_column(JSON)
+    after: Mapped[dict | None] = mapped_column(JSON)
+    ip_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )

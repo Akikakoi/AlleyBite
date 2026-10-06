@@ -6,6 +6,7 @@
 #   4) 访问 https://localhost/ （自签证书浏览器会提示不受信任，属预期）
 #
 # 服务：postgres / redis / api / scheduler / web(nginx 托管前端并反代 /api)
+#       web-admin(管理后台独立入口，仅内网可访问，文档 9.5)
 #       prometheus / alertmanager / alert-bridge(飞书) / grafana（文档 10.4 监控告警）
 name: alleybite
 
@@ -28,6 +29,17 @@ x-api-environment: &api-environment
   CRAWL_HTML_LIST_URLS: ${CRAWL_HTML_LIST_URLS:-}
   SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
   SCHEDULE_CITIES: ${SCHEDULE_CITIES:-}
+  # 分享预览（文档 9.4）：对外基址复用 PUBLIC_BASE_URL，默认分享图可覆盖
+  SHARE_BASE_URL: ${PUBLIC_BASE_URL:-}
+  SHARE_OG_IMAGE: ${SHARE_OG_IMAGE:-/og-default.jpg}
+  # 纠错限流与 IP 哈希加盐（文档 9.3）
+  FEEDBACK_RATE_LIMIT_MAX: ${FEEDBACK_RATE_LIMIT_MAX:-5}
+  FEEDBACK_IP_SALT: ${FEEDBACK_IP_SALT:-alleybite}
+  # 管理后台（文档 9.5）：独立登录；ADMIN_PASSWORD 留空则不自动建号
+  ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  ADMIN_TOKEN_SECRET: ${ADMIN_TOKEN_SECRET:-}
+  ADMIN_TOKEN_TTL_MINUTES: ${ADMIN_TOKEN_TTL_MINUTES:-120}
 
 services:
   postgres:
@@ -178,6 +190,24 @@ services:
       - "443:443"
     volumes:
       # 证书目录：本地自签 / 生产正式证书，替换文件即可
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 管理后台独立入口（文档 9.5）：独立容器 + 独立端口，仅内网/白名单可访问。
+  # 公网 web 已屏蔽 /api/v1/admin/* 等运营接口，后台只能经此入口访问。
+  web-admin:
+    build:
+      context: ./web-admin
+    ports:
+      - "${ADMIN_HTTPS_PORT:-8443}:8443"
+    volumes:
       - ./deploy/certs:/etc/nginx/certs:ro
     depends_on:
       - api

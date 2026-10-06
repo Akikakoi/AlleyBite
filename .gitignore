@@ -28,6 +28,9 @@ deploy/backup/*.gz
 # 备份脚本默认输出目录（BACKUP_DIR 默认 ./backups），防止备份文件被误提交
 /backups/
 
+# 数据质量巡检台账（脚本生成，防止误提交）
+backend/data_quality_review.csv
+
 # ---- 日志与系统文件 ----
 *.log
 .DS_Store

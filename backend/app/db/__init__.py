@@ -1,8 +1,11 @@
 from .base import Base, SessionLocal, engine, get_session, init_db
 from .models import (
+    AdminAuditLog,
+    AdminUser,
     AlignmentReview,
     City,
     ContentChunk,
+    Feedback,
     JobRun,
     Mention,
     RankSnapshot,
@@ -12,10 +15,13 @@ from .models import (
 )
 
 __all__ = [
+    "AdminAuditLog",
+    "AdminUser",
     "AlignmentReview",
     "Base",
     "City",
     "ContentChunk",
+    "Feedback",
     "JobRun",
     "Mention",
     "RankSnapshot",

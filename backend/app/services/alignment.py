@@ -45,7 +45,7 @@ def get_or_create_city(session: Session, name: str) -> City:
     return city
 
 
-def _composite_score(
+def composite_similarity(
     name_norm: str, address: str | None, restaurant: Restaurant, settings: Settings
 ) -> float:
     """名称 + 地址的加权综合相似度（缺失项按权重归一，逐项得分见函数返回）。"""
@@ -61,7 +61,6 @@ def _composite_score(
 
 
 def _add_alias(
-    session: Session,
     restaurant: Restaurant,
     raw_name: str,
     norm: str,
@@ -69,7 +68,8 @@ def _add_alias(
 ) -> bool:
     if not norm or norm == restaurant.name_norm or norm in alias_map:
         return False
-    session.add(
+    # 走关系集合追加：既落库（cascade）又保持内存中的 aliases 集合同步
+    restaurant.aliases.append(
         ShopAlias(restaurant_id=restaurant.id, alias=raw_name, alias_norm=norm)
     )
     alias_map[norm] = restaurant.id
@@ -159,7 +159,7 @@ def align_mentions(
             best_restaurant: Restaurant | None = None
             best_score = 0.0
             for restaurant in restaurants:
-                score = _composite_score(norm, address, restaurant, settings)
+                score = composite_similarity(norm, address, restaurant, settings)
                 if score > best_score:
                     best_score, best_restaurant = score, restaurant
 
@@ -167,7 +167,7 @@ def align_mentions(
                 mention.restaurant_id = best_restaurant.id
                 _backfill_restaurant(best_restaurant, mention)
                 result.mentions_aligned += 1
-                if _add_alias(session, best_restaurant, raw_name, norm, alias_map):
+                if _add_alias(best_restaurant, raw_name, norm, alias_map):
                     result.aliases_added += 1
             elif best_restaurant is not None and best_score >= settings.align_review_threshold:
                 session.add(
@@ -231,7 +231,6 @@ def confirm_review(
     mention.restaurant_id = target_id
     review.status = "confirmed"
     _add_alias(
-        session,
         restaurant,
         mention.shop_name_raw,
         normalize_shop_name(mention.shop_name_raw),
@@ -239,3 +238,110 @@ def confirm_review(
     )
     session.flush()
     return review
+
+
+def reject_review(session: Session, review_id: int) -> AlignmentReview:
+    """人工驳回灰区归并：保持 mention 未归并，避免后续重复进队列。"""
+    review = session.get(AlignmentReview, review_id)
+    if review is None:
+        raise LookupError(f"alignment_review#{review_id} 不存在")
+    review.status = "rejected"
+    session.flush()
+    return review
+
+
+def merge_restaurants(
+    session: Session, source_id: int, target_id: int
+) -> tuple[Restaurant, Restaurant, int]:
+    """把 source 店铺合并进 target（文档 9.5 店铺合并）。
+
+    处理：mention 改挂、别名迁移、缺失字段回填；source 置 merged 并保留其名称为
+    target 别名，使后续同名 mention 直接归并。返回 (source, target, 迁移的 mention 数)。
+    """
+    if source_id == target_id:
+        raise ValueError("不能合并到自身")
+    source = session.get(Restaurant, source_id)
+    target = session.get(Restaurant, target_id)
+    if source is None or target is None:
+        raise LookupError("店铺不存在")
+    if source.status == "merged":
+        raise ValueError("该店铺已被合并")
+
+    moved = 0
+    for mention in session.scalars(
+        select(MentionRow).where(MentionRow.restaurant_id == source.id)
+    ).all():
+        mention.restaurant_id = target.id
+        moved += 1
+
+    target_aliases = {a.alias_norm for a in target.aliases}
+    for alias in list(source.aliases):
+        if alias.alias_norm in target_aliases:
+            session.delete(alias)
+            continue
+        # 走关系迁移：自动从 source.aliases 摘除并加入 target.aliases，
+        # 避免 delete-orphan 误删与内存集合不一致
+        alias.restaurant = target
+        target_aliases.add(alias.alias_norm)
+    session.flush()
+
+    # source 原名称保留为 target 别名
+    if _add_alias(target, source.name, source.name_norm, {}):
+        target_aliases.add(source.name_norm)
+
+    # 缺失字段回填（已有值不覆盖）
+    if target.address is None and source.address:
+        target.address = source.address
+    if target.area is None and source.area:
+        target.area = source.area
+    if target.cuisine is None and source.cuisine:
+        target.cuisine = source.cuisine
+    if target.avg_price is None and source.avg_price is not None:
+        target.avg_price = source.avg_price
+
+    source.status = "merged"
+    source.merged_into = target.id
+    session.flush()
+    return source, target, moved
+
+
+def add_manual_alias(
+    session: Session, restaurant_id: int, alias: str
+) -> ShopAlias | None:
+    """人工确认别名（文档 9.5）；已存在（同名/同 alias_norm）返回 None。"""
+    restaurant = session.get(Restaurant, restaurant_id)
+    if restaurant is None:
+        raise LookupError("店铺不存在")
+    norm = normalize_shop_name(alias)
+    if not norm:
+        raise ValueError("别名不能为空")
+    if norm == restaurant.name_norm:
+        return None
+    existing = session.scalar(
+        select(ShopAlias).where(
+            ShopAlias.restaurant_id == restaurant_id, ShopAlias.alias_norm == norm
+        )
+    )
+    if existing is not None:
+        return None
+    row = ShopAlias(restaurant_id=restaurant_id, alias=alias.strip(), alias_norm=norm)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def set_restaurant_status(
+    session: Session, restaurant_id: int, status: str
+) -> tuple[Restaurant, str]:
+    """屏蔽/恢复店铺（文档 9.5）；仅允许 active ↔ blocked。返回 (店铺, 原状态)。"""
+    if status not in ("active", "blocked"):
+        raise ValueError("status 仅支持 active | blocked")
+    restaurant = session.get(Restaurant, restaurant_id)
+    if restaurant is None:
+        raise LookupError("店铺不存在")
+    if restaurant.status == "merged":
+        raise ValueError("已合并的店铺不可改状态")
+    before = restaurant.status
+    restaurant.status = status
+    session.flush()
+    return restaurant, before

@@ -78,3 +78,18 @@ export interface RankFilters {
   priceMax?: number
   area?: string
 }
+
+/** 纠错/举报（文档 9.3 详情页纠错入口） */
+export type FeedbackType = 'info' | 'closed' | 'label' | 'other'
+
+export interface FeedbackPayload {
+  restaurant_id?: number
+  type: FeedbackType
+  content: string
+  contact?: string
+}
+
+export interface FeedbackResult {
+  id: number
+  status: string
+}

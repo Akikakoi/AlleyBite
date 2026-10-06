@@ -109,6 +109,56 @@
         <van-button round plain type="primary" @click="onShare">分享这家店</van-button>
         <van-button round plain @click="onFeedback">纠错</van-button>
       </div>
+
+      <van-popup
+        v-model:show="showFeedback"
+        round
+        position="bottom"
+        :style="{ padding: '20px 16px 24px' }"
+      >
+        <h2 class="feedback__title">纠错 / 反馈</h2>
+        <p class="text-sub feedback__hint">{{ detail.name }}</p>
+
+        <div class="feedback__types">
+          <button
+            v-for="option in FEEDBACK_TYPES"
+            :key="option.value"
+            type="button"
+            class="feedback__type"
+            :class="{ 'feedback__type--on': form.type === option.value }"
+            @click="form.type = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+
+        <van-field
+          v-model="form.content"
+          type="textarea"
+          rows="3"
+          maxlength="500"
+          show-word-limit
+          autosize
+          placeholder="请描述哪里有问题，例如地址、人均、标签不准确"
+        />
+        <van-field
+          v-model="form.contact"
+          label="联系方式"
+          maxlength="128"
+          placeholder="选填，便于我们回访"
+        />
+
+        <van-button
+          class="feedback__submit"
+          type="primary"
+          round
+          block
+          :loading="submitting"
+          @click="submitFeedbackForm"
+        >
+          提交
+        </van-button>
+      </van-popup>
     </template>
   </div>
 </template>
@@ -119,12 +169,20 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 
 import { getRestaurant } from '@/api/restaurants'
+import { submitFeedback } from '@/api/feedback'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import KeywordTag from '@/components/KeywordTag.vue'
-import type { RestaurantDetail, SourceRef } from '@/types'
+import type { FeedbackType, RestaurantDetail, SourceRef } from '@/types'
 import { formatPrice, formatScore, sourceLabel } from '@/utils/format'
 import { shareLink } from '@/utils/share'
+
+const FEEDBACK_TYPES: { value: FeedbackType; label: string }[] = [
+  { value: 'info', label: '信息有误' },
+  { value: 'closed', label: '已关停' },
+  { value: 'label', label: '标签不当' },
+  { value: 'other', label: '其他' },
+]
 
 const route = useRoute()
 const router = useRouter()
@@ -132,6 +190,14 @@ const router = useRouter()
 const detail = ref<RestaurantDetail | null>(null)
 const state = ref<'loading' | 'ready' | 'error' | 'notfound'>('loading')
 const errorMessage = ref('')
+
+const showFeedback = ref(false)
+const submitting = ref(false)
+const form = ref<{ type: FeedbackType; content: string; contact: string }>({
+  type: 'info',
+  content: '',
+  contact: '',
+})
 
 async function load() {
   state.value = 'loading'
@@ -178,7 +244,31 @@ function onShare() {
 }
 
 function onFeedback() {
-  showToast('功能开发中')
+  form.value = { type: 'info', content: '', contact: '' }
+  showFeedback.value = true
+}
+
+async function submitFeedbackForm() {
+  const content = form.value.content.trim()
+  if (!content) {
+    showToast('请先描述问题')
+    return
+  }
+  submitting.value = true
+  try {
+    await submitFeedback({
+      restaurant_id: detail.value?.restaurant_id,
+      type: form.value.type,
+      content,
+      contact: form.value.contact.trim() || undefined,
+    })
+    showFeedback.value = false
+    showToast('已收到反馈，感谢纠正')
+  } catch (err) {
+    showToast(err instanceof ApiError ? err.message : '提交失败，请稍后重试')
+  } finally {
+    submitting.value = false
+  }
 }
 
 onMounted(load)
@@ -298,5 +388,43 @@ onMounted(load)
 
 .detail__actions .van-button {
   flex: 1;
+}
+
+.feedback__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-secondary);
+}
+
+.feedback__hint {
+  margin: 4px 0 14px;
+}
+
+.feedback__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.feedback__type {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.feedback__type--on {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.feedback__submit {
+  margin-top: 16px;
 }
 </style>

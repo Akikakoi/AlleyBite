@@ -178,8 +178,19 @@ function onShare() {
   shareLink({
     title: `${city.value}苍蝇馆子榜`,
     text: '本地人才知道的宝藏小店',
-    url: window.location.href,
+    url: shareUrl(),
   })
+}
+
+/** 分享链接带城市与筛选参数（文档 9.2），保证打开后定位到同一榜单 */
+function shareUrl(): string {
+  const query: Record<string, string> = { city: city.value }
+  const f = filters.value
+  if (f.cuisine) query.cuisine = f.cuisine
+  if (f.area) query.area = f.area
+  if (f.priceMin !== undefined) query.price_min = String(f.priceMin)
+  if (f.priceMax !== undefined) query.price_max = String(f.priceMax)
+  return `${window.location.origin}/rank?${new URLSearchParams(query).toString()}`
 }
 </script>
 
