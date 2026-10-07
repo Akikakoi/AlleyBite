@@ -52,7 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.list:
         for row in describe_sources(settings):
             mark = "就绪  " if row["ready"] else "未就绪"
-            print(f"{row['source']:<12} {mark} {row['note']}")
+            print(f"{row['source']:<12} [{row['status']:<7}] {mark} {row['note']}")
+            if row["compliance"]:
+                print(f"{'':<12}   合规：{row['compliance']}")
+            if row["robots"]:
+                print(f"{'':<12}   robots：{row['robots']}")
         return 0
 
     init_db()

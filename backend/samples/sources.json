@@ -1,0 +1,78 @@
+{
+  "updated_at": "2026-10-07",
+  "note": "来源台账（文档 4.1 / 11.1）：记录每个数据源的获取方式、合规结论与 robots 判定，供 run_crawl --list 展示与合规审计。新增或接入来源时请同步维护此处。",
+  "sources": [
+    {
+      "source": "seed",
+      "status": "active",
+      "type": "人工种子",
+      "acquisition": "运营整理的公开报道 JSONL（backend/samples/seeds.reports.jsonl），本地读取、不走网络",
+      "compliance": "仅收录可溯源公开报道；对原文做摘要引用并保留 source_url 跳转，不整体转载、不采个人信息",
+      "robots": "n/a（本地文件，无网络请求）",
+      "qps": 0
+    },
+    {
+      "source": "rss",
+      "status": "active",
+      "type": "公开 RSS/Atom",
+      "acquisition": "配置 CRAWL_RSS_URLS 的公开 feed，低频增量拉取",
+      "compliance": "仅公开 feed；正文仅取摘要用于抽取，对外展示做引用跳转",
+      "robots": "采集时经 RobotsGate 按目标域名 robots.txt 判定；无 robots.txt 放行，401/403 视为全站禁止",
+      "qps": 1.0
+    },
+    {
+      "source": "html_list",
+      "status": "active",
+      "type": "公开列表页/单页",
+      "acquisition": "配置 CRAWL_HTML_LIST_URLS（列表页跟进正文）与 CRAWL_HTML_PAGE_URLS（单页即内容）",
+      "compliance": "仅合规公开静态页；单页模式用于官方必吃榜/名单页；不绕登录/验证码/加密",
+      "robots": "采集时经 RobotsGate 判定；本会话抽检：nfnews.com 明示 Allow，chengdu.gov.cn / gz.gov.cn 无 robots.txt 走放行，cq.gov.cn 被 WAF 拦截（403 视为禁止）",
+      "qps": 1.0
+    },
+    {
+      "source": "amap",
+      "status": "active",
+      "type": "地图 POI 开放 API",
+      "acquisition": "高德开放平台 Web 服务 API，正规 key；作为实体/坐标/地址基准",
+      "compliance": "官方开放 API，配额可控；仅取 POI 结构化字段，不取用户评论",
+      "robots": "n/a（API 调用，遵循开放平台协议与配额）",
+      "qps": null
+    },
+    {
+      "source": "dianping",
+      "status": "planned",
+      "type": "UGC 平台",
+      "acquisition": "官方开放平台/商务合作（本期不接入）",
+      "compliance": "高风险：禁止绕过登录/验证码/加密参数抓取；未经合作不采集",
+      "robots": "未评估（本期不接入）",
+      "qps": null
+    },
+    {
+      "source": "xiaohongshu",
+      "status": "planned",
+      "type": "UGC 平台",
+      "acquisition": "开放平台/商务合作（本期不接入）",
+      "compliance": "高风险：笔记含个人信息与商业推广，未经合作不采集",
+      "robots": "未评估（本期不接入）",
+      "qps": null
+    },
+    {
+      "source": "weibo",
+      "status": "planned",
+      "type": "开放平台 API",
+      "acquisition": "微博开放平台 API（需申请）",
+      "compliance": "中风险：需正规 key 与配额，遵守平台协议",
+      "robots": "n/a（API 调用）",
+      "qps": null
+    },
+    {
+      "source": "zhihu",
+      "status": "planned",
+      "type": "问答内容",
+      "acquisition": "搜索结果聚合（需合规评估）",
+      "compliance": "中风险：知乎 robots 限制较多，仅可人工整理为种子，不自动抓取",
+      "robots": "多数路径 Disallow，不自动抓取",
+      "qps": null
+    }
+  ]
+}

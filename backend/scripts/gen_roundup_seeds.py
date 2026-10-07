@@ -6,6 +6,8 @@
 文本走后续正常链路（seed 采集 → LLM 抽取 → 对齐到真实 POI → 打分）产出 mention。
 
 注意：**文本为合成演示数据**，非真实抓取的评论；店名与地址来自真实 POI。
+source 字段统一标记为 `roundup`，不冒用真实平台名（xiaohongshu/dianping 等），
+避免 raw_content.source 误导"来源平台"展示与来源多样性统计。
 用法：python scripts/gen_roundup_seeds.py [--per-post 12] [--max-shops 130]
 """
 
@@ -54,7 +56,8 @@ PRAISE = [
 
 COMPLAINT = ["环境一般", "饭点要排队", "店面不大", "位置不太好找", "服务一般", "有点吵"]
 
-SOURCES = ["xiaohongshu", "forum", "dianping", "weibo", "seed"]
+# 合成文本用**中性来源标识**，不得冒用真实平台名（xiaohongshu/dianping 等）。
+SOURCE = "roundup"
 
 
 def _rng(name: str) -> random.Random:
@@ -124,12 +127,11 @@ def main() -> int:
                 _snippet(i + 1, name, area) for i, (name, area) in enumerate(group)
             )
             text = lead + body + "。以上都是本地人常去、回购率高的老店，值得一试。"
-            src = SOURCES[post_no % len(SOURCES)]
             published = (base + timedelta(days=post_no, hours=post_no % 12)).isoformat()
             lines.append(
                 json.dumps(
                     {
-                        "source": src,
+                        "source": SOURCE,
                         "raw_title": f"{city_name}苍蝇馆子合集｜本地人私藏的{len(group)}家小店",
                         "raw_text": text,
                         "source_url": f"https://example.com/roundup/{city_name}-{post_no + 1}",

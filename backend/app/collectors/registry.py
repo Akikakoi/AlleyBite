@@ -7,6 +7,9 @@ P0 已实现：seed（人工种子）、rss（公开 feed）、html_list（公�
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ..core.config import Settings
 from .amap import AmapPoiCollector
 from .base import BaseCollector
@@ -64,27 +67,80 @@ def build_collector(
     raise ValueError(f"未知数据源：{name}")
 
 
-def describe_sources(settings: Settings) -> list[dict]:
-    """供 `run_crawl.py --list` 展示各源就绪状态（不发起网络请求）。"""
-    rows = []
-    for name in P0_SOURCES:
-        if name == "seed":
-            from pathlib import Path
+# 来源台账（文档 4.1 / 11.1）：记录每源的获取方式、合规结论与 robots 判定，
+# 供 `run_crawl.py --list` 展示与合规审计。缺失时不影响运行，格式错误则明确报错。
+DEFAULT_SOURCE_LEDGER = "samples/sources.json"
 
-            ready = Path(DEFAULT_SEED_PATH).exists()
-            note = DEFAULT_SEED_PATH
-        elif name == "rss":
-            ready = bool(settings.rss_url_list)
-            note = f"{len(settings.rss_url_list)} 个 feed"
-        elif name == "html_list":
-            lists = settings.html_list_url_list
-            pages = settings.html_page_url_list
-            ready = bool(lists or pages)
-            note = f"{len(lists)} 个列表页 + {len(pages)} 个单页"
-        else:  # amap
-            ready = settings.has_amap
-            note = "已配置 key" if ready else "未配置 AMAP_API_KEY"
-        rows.append({"source": name, "ready": ready, "note": note})
+
+def load_source_ledger(path: str | Path = DEFAULT_SOURCE_LEDGER) -> dict[str, dict]:
+    """读取来源台账 JSON，返回 ``source -> 条目`` 映射；文件不存在时返回空映射。"""
+    ledger_path = Path(path)
+    if not ledger_path.exists():
+        return {}
+    data = json.loads(ledger_path.read_text(encoding="utf-8"))
+    rows = data.get("sources") if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        raise ValueError(f"来源台账格式错误：{path} 需为列表或含 sources 列表的对象")
+    ledger: dict[str, dict] = {}
+    for row in rows:
+        if isinstance(row, dict) and row.get("source"):
+            ledger[str(row["source"])] = row
+    return ledger
+
+
+def _readiness(name: str, settings: Settings) -> tuple[bool, str]:
+    """各 P0 源的动态就绪判定（不发起网络请求）。"""
+    if name == "seed":
+        return Path(DEFAULT_SEED_PATH).exists(), DEFAULT_SEED_PATH
+    if name == "rss":
+        feed_count = len(settings.rss_url_list)
+        return bool(feed_count), f"{feed_count} 个 feed"
+    if name == "html_list":
+        lists = settings.html_list_url_list
+        pages = settings.html_page_url_list
+        return bool(lists or pages), f"{len(lists)} 个列表页 + {len(pages)} 个单页"
+    # amap
+    ready = settings.has_amap
+    return ready, "已配置 key" if ready else "未配置 AMAP_API_KEY"
+
+
+def _ledger_meta(name: str, entry: dict, *, default_status: str) -> dict:
+    """从台账条目提取展示字段，缺项给空值。"""
+    return {
+        "source": name,
+        "status": entry.get("status", default_status),
+        "type": entry.get("type", ""),
+        "compliance": entry.get("compliance", ""),
+        "robots": entry.get("robots", ""),
+        "qps": entry.get("qps"),
+    }
+
+
+def describe_sources(
+    settings: Settings, *, ledger_path: str | Path = DEFAULT_SOURCE_LEDGER
+) -> list[dict]:
+    """供 `run_crawl.py --list` 展示各源就绪状态与合规台账（不发起网络请求）。"""
+    ledger = load_source_ledger(ledger_path)
+    rows: list[dict] = []
+
+    for name in P0_SOURCES:
+        ready, note = _readiness(name, settings)
+        row = _ledger_meta(name, ledger.get(name, {}), default_status="active")
+        row.update(ready=ready, note=note)
+        rows.append(row)
+
     for name, reason in PLANNED_SOURCES.items():
-        rows.append({"source": name, "ready": False, "note": f"未实现：{reason}"})
+        entry = ledger.get(name, {})
+        row = _ledger_meta(name, entry, default_status="planned")
+        row["compliance"] = row["compliance"] or reason
+        row.update(ready=False, note=entry.get("note") or f"未实现：{reason}")
+        rows.append(row)
+
+    known = set(P0_SOURCES) | set(PLANNED_SOURCES)
+    for name, entry in ledger.items():
+        if name in known:
+            continue
+        row = _ledger_meta(name, entry, default_status="planned")
+        row.update(ready=False, note=entry.get("note") or row["compliance"])
+        rows.append(row)
     return rows
