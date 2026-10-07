@@ -19,6 +19,7 @@ from .html_list import (
     extract_links,
     extract_text,
     extract_title,
+    parse_page_specs,
     strip_html,
 )
 from .ratelimit import DomainRateLimiter
@@ -55,6 +56,7 @@ __all__ = [
     "extract_text",
     "extract_title",
     "make_default_deps",
+    "parse_page_specs",
     "parse_poi",
     "parse_rss",
     "parse_seed_records",

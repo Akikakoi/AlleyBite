@@ -11,7 +11,13 @@ from app.collectors.base import BaseCollector
 from app.collectors.core import CrawlItem
 from app.collectors.runner import run_crawl
 from app.db.models import JobRun, RawContent
-from collectors_fakes import make_client, make_deps, make_settings, memory_session
+from collectors_fakes import (
+    make_client,
+    make_deps,
+    make_settings,
+    map_handler,
+    memory_session,
+)
 
 LONG = "成都苍蝇馆子锅气足价钱实惠老板热情。" * 8
 
@@ -159,3 +165,31 @@ def test_run_crawl_force_bypasses_night(session, tmp_path):
 
     assert job.stats.get("skipped") is None
     assert job.stats["sources"]["seed"]["new"] == 1
+
+
+PAGE_HTML = (
+    "<html><head><title>广州老字号名单</title></head><body>"
+    "<p>点都德 广州市越秀区惠福东路1号 老字号茶楼</p>"
+    "<p>广州酒家 广州市荔湾区文昌南路2号 老字号粤菜</p></body></html>"
+)
+
+
+def test_html_page_source_ingest_is_idempotent(session):
+    """单页即内容源：整页入库，重跑靠 (source, content_hash) 幂等。"""
+    settings = make_settings(crawl_html_page_urls="广州=http://gz.test/laozihao")
+    deps = make_deps(
+        make_client(map_handler({"http://gz.test/laozihao": (200, PAGE_HTML)}))
+    )
+
+    first = run_crawl(session, settings, sources=["html_list"], deps=deps)
+    assert first.stats["sources"]["html_list"]["new"] == 1
+
+    second = run_crawl(session, settings, sources=["html_list"], deps=deps)
+    stats = second.stats["sources"]["html_list"]
+    assert stats["new"] == 0
+    assert stats["duplicated"] == 1
+
+    rows = session.scalars(select(RawContent)).all()
+    assert len(rows) == 1
+    assert rows[0].city_hint == "广州"
+    assert rows[0].source_url == "http://gz.test/laozihao"

@@ -53,6 +53,7 @@ def build_collector(
             settings=settings,
             deps=deps,
             list_urls=settings.html_list_url_list,
+            page_urls=settings.html_page_url_list,
             city_hint=city_hint,
         )
     if name == "amap":
@@ -76,8 +77,10 @@ def describe_sources(settings: Settings) -> list[dict]:
             ready = bool(settings.rss_url_list)
             note = f"{len(settings.rss_url_list)} 个 feed"
         elif name == "html_list":
-            ready = bool(settings.html_list_url_list)
-            note = f"{len(settings.html_list_url_list)} 个列表页"
+            lists = settings.html_list_url_list
+            pages = settings.html_page_url_list
+            ready = bool(lists or pages)
+            note = f"{len(lists)} 个列表页 + {len(pages)} 个单页"
         else:  # amap
             ready = settings.has_amap
             note = "已配置 key" if ready else "未配置 AMAP_API_KEY"

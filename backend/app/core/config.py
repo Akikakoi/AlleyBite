@@ -100,7 +100,10 @@ class Settings(BaseSettings):
     crawl_contact: str = ""                  # 联系方式，用于拼真实 User-Agent
     crawl_user_agent: str = ""               # 显式 UA；留空则由 crawl_contact 派生
     crawl_rss_urls: str = ""                 # 公开 RSS/Atom feed，逗号或换行分隔
-    crawl_html_list_urls: str = ""           # 公开列表页，逗号或换行分隔
+    crawl_html_list_urls: str = ""           # 公开列表页（列表页→跟进正文），逗号或换行分隔
+    # 「单页即内容」静态页：页面正文整体作为一条内容，不跟进外链。
+    # 每项格式 `城市=URL`（无前缀时用 --city）；逗号或换行分隔。适用于官方榜单/名单页。
+    crawl_html_page_urls: str = ""
     crawl_max_items_per_source: int = 200    # 单源单次采集条目上限
     crawl_breaker_fail_threshold: int = 5    # 连续 403/429 达该值 → 熔断暂停该源
     crawl_breaker_cooldown_minutes: int = 360  # 熔断冷却时长（分钟）
@@ -174,6 +177,11 @@ class Settings(BaseSettings):
     @property
     def html_list_url_list(self) -> list[str]:
         return _split_urls(self.crawl_html_list_urls)
+
+    @property
+    def html_page_url_list(self) -> list[str]:
+        """「单页即内容」配置项原始列表；`城市=URL` 前缀解析见 html_list.parse_page_specs。"""
+        return _split_urls(self.crawl_html_page_urls)
 
     @property
     def build_user_agent(self) -> str:

@@ -1,19 +1,19 @@
-# CD（开发文档 10.3）：CI 通过后自动部署 staging；prod 需人工审批后手动触发
+# CD（开发文档 10.3）：改为**手动部署**，不再随 CI 自动触发。
 #
-# 依赖仓库 Secrets（Settings → Secrets and variables → Actions）：
+# 背景：本项目为单机 Docker Compose 部署，日常上线直接在服务器执行
+#     git fetch --all && git pull --ff-only origin main && docker compose up -d --build
+# 故移除 workflow_run 自动触发，避免 main 上每次 CI 成功都产生一条失败的 Deploy 记录。
+#
+# 本工作流仅作为**手动备份通道**保留：如需由 GitHub 代为发布，
+# 先在仓库 Settings → Secrets and variables → Actions 配置：
 #   SSH_HOST     目标服务器地址
 #   SSH_USER     SSH 用户
 #   SSH_KEY      SSH 私钥（对应公钥已加入服务器 authorized_keys）
 #   DEPLOY_PATH  服务器上本仓库的部署目录（含 docker-compose.yml）
+# prod 另需在 Settings → Environments 为 production 配置 Required reviewers。
 name: Deploy
 
 on:
-  # staging：CI 在 main 上成功后自动部署
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  # prod：手动触发（受 environment: production 人工审批保护）
   workflow_dispatch:
     inputs:
       environment:
@@ -23,37 +23,14 @@ on:
         default: staging
 
 concurrency:
-  group: deploy-${{ github.event_name == 'workflow_run' && 'staging' || inputs.environment }}
+  group: deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
-  staging:
-    name: 部署 staging（自动）
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+  deploy:
+    name: 部署 ${{ inputs.environment }}（手动）
     runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - name: SSH 发布
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH }}
-            git fetch --all
-            git pull --ff-only origin main
-            docker compose build
-            docker compose up -d
-            docker image prune -f
-
-  prod:
-    name: 部署 prod（人工审批）
-    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
-    runs-on: ubuntu-latest
-    # 在仓库 Settings → Environments 为 production 配置 Required reviewers
-    environment: production
+    environment: ${{ inputs.environment }}
     steps:
       - name: SSH 发布
         uses: appleboy/ssh-action@v1
