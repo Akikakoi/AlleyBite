@@ -67,12 +67,15 @@ class LLMClient:
             return self._mock_reply(messages)
 
         provider = self.settings.llm_provider
+        extra_body = self.settings.llm_extra_body_dict
+        kwargs: dict = {"extra_body": extra_body} if extra_body else {}
         try:
             resp = self._get_client().chat.completions.create(
                 model=self.settings.llm_model,
                 messages=messages,
                 temperature=self.settings.llm_temperature,
                 response_format={"type": "json_object"},
+                **kwargs,
             )
         except Exception:
             record_llm_call(provider, ok=False)

@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
     llm_mock: bool = False
     llm_timeout: float = 60.0
     llm_temperature: float = 0.1
+    # LLM 请求附加参数（JSON 对象字符串，默认空）；用于按厂商传开关，
+    # 如关闭推理模型思考链（可显著提速）：{"chat_template_kwargs": {"enable_thinking": false}}
+    llm_extra_body: str = ""
 
     # 抽取
     extract_confidence_min: float = 0.6
@@ -153,6 +157,23 @@ class Settings(BaseSettings):
     def use_mock(self) -> bool:
         """无 API Key 或显式开启 mock 时，走离线 mock，保证 demo/单测可跑。"""
         return self.llm_mock or not self.llm_api_key
+
+    @property
+    def llm_extra_body_dict(self) -> dict:
+        """解析 LLM_EXTRA_BODY 为 dict，透传给 OpenAI 兼容客户端的 extra_body。
+
+        留空时返回空 dict（不影响请求）；非法 JSON 或非对象时抛错，避免静默失效。
+        """
+        raw = self.llm_extra_body.strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM_EXTRA_BODY 不是合法 JSON：{exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError("LLM_EXTRA_BODY 必须是 JSON 对象")
+        return data
 
     @property
     def chain_brand_list(self) -> list[str]:
