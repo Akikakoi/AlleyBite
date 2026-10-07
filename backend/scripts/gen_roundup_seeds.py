@@ -1,14 +1,20 @@
-"""程序化生成"本地人合集帖"人工种子（M1 扩量用）。
+"""【已退役 DEPRECATED 2026-10-07】程序化生成"本地人合集帖"合成种子（原 M1 扩量用）。
 
-背景：合规前提下无真实口碑文本，榜单只收录"有 mention 的店"。为把每城有效店铺
+退役原因：文本为**合成演示数据**，会以"真实口碑"进入榜单与来源展示，污染来源多样性
+与 Top20 结果；公开报道真实种子（samples/seeds.reports.jsonl）已能覆盖各城实体底座，
+故本脚本自 2026-10-07 起退役，不再进入采集主流程（samples/sources.json 已标 retired）。
+
+本文件保留仅作历史留档，请勿在生产链路调用 / 重灌 `samples/seeds.roundup.jsonl`：
+重灌会因唯一约束 (source, content_hash) 之外的口径差异产生重复内容行。
+
+背景（历史）：合规前提下无真实口碑文本，榜单只收录"有 mention 的店"。为把每城有效店铺
 （名称+地址+≥1 口碑关键词）扩到 ≥100，本脚本从已有的高德 POI 实体（真实店名/地址）
 取店名，生成若干"合集帖"文本 —— 一帖含约 12 家、每家有招牌菜/人均/口碑关键词。
 文本走后续正常链路（seed 采集 → LLM 抽取 → 对齐到真实 POI → 打分）产出 mention。
 
 注意：**文本为合成演示数据**，非真实抓取的评论；店名与地址来自真实 POI。
-source 字段统一标记为 `roundup`，不冒用真实平台名（xiaohongshu/dianping 等），
-避免 raw_content.source 误导"来源平台"展示与来源多样性统计。
-用法：python scripts/gen_roundup_seeds.py [--per-post 12] [--max-shops 130]
+source 字段统一标记为 `roundup`，不冒用真实平台名（xiaohongshu/dianping 等）。
+用法（仅历史留档）：python scripts/gen_roundup_seeds.py [--per-post 12] [--max-shops 130]
 """
 
 from __future__ import annotations

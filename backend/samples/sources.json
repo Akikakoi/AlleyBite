@@ -12,6 +12,27 @@
       "qps": 0
     },
     {
+      "source": "sample",
+      "status": "demo",
+      "type": "内置演示种子",
+      "acquisition": "仓库内置示例种子 samples/seeds.sample.jsonl（DEFAULT_SEED_PATH），随代码分发、本地读取不走网络，供离线跑通与演示",
+      "compliance": "文本为合成演示数据，非真实抓取；source 统一标记为 sample，不冒用真实平台名（xiaohongshu/dianping/weibo/forum 等）",
+      "robots": "n/a（本地文件，无网络请求）",
+      "qps": 0,
+      "note": "演示来源：随仓库分发的示例种子，供离线跑通/演示；2026-10-07 已将其 source 由假平台名（xiaohongshu/dianping/weibo/forum）统一重置为 sample"
+    },
+    {
+      "source": "roundup",
+      "status": "retired",
+      "type": "合成演示数据（已退役）",
+      "acquisition": "由 scripts/gen_roundup_seeds.py 程序化生成的「本地人合集帖」演示文本（seeds.roundup.jsonl），非真实抓取",
+      "compliance": "无真实来源，早期仅用于本地演示与榜单扩量；为保持来源诚实，2026-10-07 起退役，不再进入采集主流程",
+      "robots": "n/a（非采集来源，无网络请求）",
+      "qps": null,
+      "note": "已退役：本地 DB 中残留的合成 roundup 行及其 mention 已清理；榜单仅由真实来源（seed/html_list）与仓库内置演示种子驱动",
+      "retired_at": "2026-10-07"
+    },
+    {
       "source": "rss",
       "status": "active",
       "type": "公开 RSS/Atom",
