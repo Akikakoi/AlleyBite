@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     amap_max_pages: int = 3
     # 美食检索关键词（逗号分隔），逐个检索后按 poi_id 去重，用于扩量 POI 实体基准
     amap_keywords: str = "美食,川菜,火锅,面馆,烧烤,小吃,家常菜,串串"
+    # 按城市覆盖检索关键词（文档 4.1 城市扩张）：条目格式 `城市=词1,词2`，
+    # 条目之间用 ; 或换行分隔（城市内的词可含逗号）。命中城市用专属词，未命中回退 amap_keywords。
+    amap_keywords_by_city: str = ""
 
     # 纠错/举报（文档 9.3 / 14 章合规验收）：免登录提交，按 IP 哈希限流
     feedback_rate_limit_max: int = 5            # 单 IP 窗口内最多提交条数
@@ -188,6 +191,25 @@ class Settings(BaseSettings):
     @property
     def chain_brand_list(self) -> list[str]:
         return [s.strip() for s in self.chain_brand_blacklist.split(",") if s.strip()]
+
+    @property
+    def amap_city_keywords_map(self) -> dict[str, list[str]]:
+        """解析 AMAP_KEYWORDS_BY_CITY 为 {城市: [词...]}；条目以 ; 或换行分隔。
+
+        城市内的词以逗号分隔，因此条目分隔符不能含逗号；缺 `=` 的条目跳过。
+        """
+        result: dict[str, list[str]] = {}
+        raw = self.amap_keywords_by_city.replace("\r", "\n").replace(";", "\n")
+        for entry in raw.split("\n"):
+            entry = entry.strip()
+            if not entry or "=" not in entry:
+                continue
+            city, _, words = entry.partition("=")
+            city = city.strip()
+            keywords = [w.strip() for w in words.split(",") if w.strip()]
+            if city and keywords:
+                result[city] = keywords
+        return result
 
     @property
     def chain_category_list(self) -> list[str]:

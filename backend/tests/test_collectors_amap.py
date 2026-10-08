@@ -176,3 +176,43 @@ def test_run_crawl_amap_writes_poi_restaurants(session):
     assert row.poi_source == POI_SOURCE
     assert row.name == "陈麻婆豆腐"
     assert row.latitude == 30.67
+
+# --- 按城市覆盖关键词（文档 4.1 城市扩张）-----------------------------------
+
+
+def test_city_keywords_map_parsing():
+    settings = make_settings(
+        amap_keywords_by_city="福州=佛跳墙,肉燕,鱼丸;厦门=沙茶面,海蛎煎\n泉州=面线糊"
+    )
+    assert settings.amap_city_keywords_map == {
+        "福州": ["佛跳墙", "肉燕", "鱼丸"],
+        "厦门": ["沙茶面", "海蛎煎"],
+        "泉州": ["面线糊"],
+    }
+    # 空/非法条目跳过
+    settings = make_settings(amap_keywords_by_city="福州=;=无城,词;厦门=")
+    assert settings.amap_city_keywords_map == {}
+
+
+def test_collector_prefers_city_keywords_over_global():
+    settings = make_settings(
+        amap_api_key="test-key",
+        amap_keywords="美食,川菜",
+        amap_keywords_by_city="福州=佛跳墙,肉燕",
+    )
+    deps = make_deps(make_client(lambda r: httpx.Response(200, text="")))
+
+    fuzhou = AmapPoiCollector(settings=settings, deps=deps, city_hint="福州")
+    assert fuzhou.keywords == ["佛跳墙", "肉燕"]
+
+    chengdu = AmapPoiCollector(settings=settings, deps=deps, city_hint="成都")
+    assert chengdu.keywords == ["美食", "川菜"]
+
+    # 显式传参优先级最高（run_crawl.py --keywords 通道）
+    explicit = AmapPoiCollector(
+        settings=settings, deps=deps, city_hint="福州", keywords="小吃"
+    )
+    assert explicit.keywords == ["小吃"]
+
+    no_city = AmapPoiCollector(settings=settings, deps=deps, city_hint=None)
+    assert no_city.keywords == ["美食", "川菜"]

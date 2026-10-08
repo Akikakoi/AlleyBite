@@ -78,7 +78,16 @@ class AmapPoiCollector(BaseCollector):
         super().__init__(
             settings=settings, deps=deps, city_hint=city_hint, respect_robots=False
         )
-        raw = keywords if keywords is not None else settings.amap_keywords
+        if keywords is None:
+            # 显式传参 > 按城市配置 > 全局关键词（文档 4.1 城市扩张：按城配特色菜系词）
+            city_map = settings.amap_city_keywords_map
+            city_keywords = city_map.get((city_hint or "").strip())
+            if city_keywords:
+                self.keywords = city_keywords
+                return
+            raw = settings.amap_keywords
+        else:
+            raw = keywords
         self.keywords = [k.strip() for k in (raw or "美食").split(",") if k.strip()]
 
     @property
