@@ -115,6 +115,8 @@ try {
         }
         if ($ready) {
             Write-Note "健康检查通过。"
+            # 就绪后用系统默认浏览器打开前端首页
+            Start-Process "https://127.0.0.1/"
         } else {
             Write-Warn2 "180 秒内未等到 /health 返回 200，请执行 docker compose logs -f api 排查。"
             $exitCode = 1
