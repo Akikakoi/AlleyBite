@@ -70,6 +70,8 @@ export interface RankQuery {
   priceMin?: number
   priceMax?: number
   area?: string
+  /** 时间维度（文档 2.2 V1.1）：仅看近 N 天内被提及的店，如 90 */
+  days?: number
 }
 
 export interface RankFilters {
@@ -77,6 +79,8 @@ export interface RankFilters {
   priceMin?: number
   priceMax?: number
   area?: string
+  /** 时间维度：仅看近 N 天内被提及的店（90 = 近 90 天），不传 = 全部 */
+  days?: number
 }
 
 /** 纠错/举报（文档 9.3 详情页纠错入口） */

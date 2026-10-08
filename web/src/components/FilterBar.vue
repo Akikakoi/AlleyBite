@@ -1,5 +1,6 @@
 <template>
   <van-dropdown-menu class="filter-bar" active-color="#FF6B35">
+    <van-dropdown-item v-model="timeValue" :options="TIME_OPTIONS" @change="emitChange" />
     <van-dropdown-item
       v-model="cuisineValue"
       :options="cuisineOptions"
@@ -27,6 +28,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'change', filters: RankFilters): void }>()
 
+const TIME_OPTIONS = [
+  { text: '全部时间', value: '' },
+  { text: '近 90 天', value: '90' },
+]
+
 const PRICE_OPTIONS = [
   { text: '人均不限', value: '' },
   { text: '¥30 以下', value: '0-30' },
@@ -35,6 +41,7 @@ const PRICE_OPTIONS = [
   { text: '¥100 以上', value: '100-' },
 ]
 
+const timeValue = ref(props.filters.days ? String(props.filters.days) : '')
 const cuisineValue = ref(props.filters.cuisine ?? '')
 const priceValue = ref(rangeToValue(props.filters))
 const areaValue = ref(props.filters.area ?? '')
@@ -67,6 +74,7 @@ function emitChange() {
   emit('change', {
     cuisine: cuisineValue.value || undefined,
     area: areaValue.value || undefined,
+    days: timeValue.value ? Number(timeValue.value) : undefined,
     ...valueToRange(priceValue.value),
   })
 }
@@ -74,6 +82,7 @@ function emitChange() {
 watch(
   () => props.filters,
   (next) => {
+    timeValue.value = next.days ? String(next.days) : ''
     cuisineValue.value = next.cuisine ?? ''
     areaValue.value = next.area ?? ''
     priceValue.value = rangeToValue(next)

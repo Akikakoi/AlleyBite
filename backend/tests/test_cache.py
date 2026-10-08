@@ -66,9 +66,12 @@ def test_cache_disabled_without_url():
 
 def test_cache_key_shape():
     key = RankCache.key("成都", 1, 20, "川菜", 20, 100, "青羊区")
-    assert key == "rank:成都:1:20:川菜:20:100:青羊区"
+    assert key == "rank:成都:1:20:川菜:20:100:青羊区:"
     bare = RankCache.key("成都", 2, 10, None, None, None, None)
-    assert bare == "rank:成都:2:10::::"
+    assert bare == "rank:成都:2:10:::::"
+    # 时间维度参与缓存键（文档 2.2 V1.1）
+    recent = RankCache.key("成都", 2, 10, None, None, None, None, 90)
+    assert recent == "rank:成都:2:10:::::90"
 
 
 def test_cache_roundtrip_and_invalidate():

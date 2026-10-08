@@ -8,7 +8,7 @@
 """
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -214,6 +214,14 @@ def get_latest_snapshot(session: Session, city_hint: str) -> RankSnapshot | None
     )
 
 
+def _parse_item_date(value) -> datetime | None:
+    """快照条目的 last_mentioned_at（YYYY-MM-DD）→ UTC datetime；解析失败返回 None。"""
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def _apply_filters(
     items: list[dict],
     *,
@@ -221,6 +229,8 @@ def _apply_filters(
     price_min: float | None,
     price_max: float | None,
     area: str | None,
+    days: int | None = None,
+    now: datetime | None = None,
 ) -> list[dict]:
     result = items
     if cuisine:
@@ -235,6 +245,16 @@ def _apply_filters(
         result = [
             i for i in result if i.get("avg_price") is not None and i["avg_price"] <= price_max
         ]
+    if days:
+        # 时间维度（文档 2.2 V1.1）：仅保留快照生成时点前 N 天内被提及过的店，
+        # 次序不变、名次重排。以快照生成时间为基准，保证结果确定、缓存一致。
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
+        result = [
+            i
+            for i in result
+            if (t := _parse_item_date(i.get("last_mentioned_at"))) is not None and t >= cutoff
+        ]
+        result = [{**i, "rank": rank} for rank, i in enumerate(result, start=1)]
     return result
 
 
@@ -248,18 +268,23 @@ def get_rank(
     price_min: float | None = None,
     price_max: float | None = None,
     area: str | None = None,
+    days: int | None = None,
     cache: RankCache | None = None,
 ) -> dict | None:
     """读最新快照并分页；该城市无快照时返回 None。
 
     注意：筛选在快照 Top N 之上进行，故筛选后条数可能少于 Top N。
+    days 传入正整数时启用时间维度（如 90 = 近 90 天），按最近提及时间过滤并重排名次。
     """
-    cache_key = None
     if cache is not None and cache.enabled:
-        cache_key = RankCache.key(city_hint, page, page_size, cuisine, price_min, price_max, area)
+        cache_key = RankCache.key(
+            city_hint, page, page_size, cuisine, price_min, price_max, area, days
+        )
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
+    else:
+        cache_key = None
 
     snapshot = get_latest_snapshot(session, city_hint)
     if snapshot is None:
@@ -271,6 +296,8 @@ def get_rank(
         price_min=price_min,
         price_max=price_max,
         area=area,
+        days=days,
+        now=to_utc(snapshot.generated_at),
     )
     total = len(items)
     start = max(0, (page - 1) * page_size)

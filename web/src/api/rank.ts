@@ -11,6 +11,7 @@ export function getRank(query: RankQuery) {
     priceMin,
     priceMax,
     area,
+    days,
   } = query
   return get<RankData>('/v1/rank', {
     city,
@@ -20,5 +21,6 @@ export function getRank(query: RankQuery) {
     price_min: priceMin,
     price_max: priceMax,
     area,
+    days,
   })
 }

@@ -6,9 +6,12 @@
         <h1 class="page-title">{{ city }}</h1>
         <p class="text-sub">苍蝇馆子榜 · 综合分排序</p>
       </div>
-      <van-button size="small" round plain type="primary" @click="onShare">
-        分享
-      </van-button>
+      <div class="rank__actions">
+        <van-button size="small" round plain @click="toMap">地图</van-button>
+        <van-button size="small" round plain type="primary" @click="showShare = true">
+          分享
+        </van-button>
+      </div>
     </header>
 
     <FilterBar
@@ -55,6 +58,15 @@
         @load="onLoad"
       />
     </template>
+
+    <ShareSheet
+      v-model:show="showShare"
+      :title="`${city}苍蝇馆子榜`"
+      text="本地人才知道的宝藏小店"
+      :url="shareUrl()"
+      :filename="`${city}苍蝇馆子榜.png`"
+      :poster="rankPoster"
+    />
   </div>
 </template>
 
@@ -66,10 +78,11 @@ import { getRank } from '@/api/rank'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import ShareSheet from '@/components/ShareSheet.vue'
 import ShopCard from '@/components/ShopCard.vue'
 import { useCityStore } from '@/store/city'
 import type { RankFilters, RankItem } from '@/types'
-import { shareLink } from '@/utils/share'
+import { renderRankPoster } from '@/utils/shareImage'
 
 const PAGE_SIZE = 20
 
@@ -87,6 +100,7 @@ const loading = ref(false)
 const finished = ref(false)
 const state = ref<'ready' | 'collecting' | 'error'>('ready')
 const errorMessage = ref('')
+const showShare = ref(false)
 
 const cuisines = computed(() =>
   Array.from(new Set(items.value.map((i) => i.cuisine).filter(Boolean) as string[])),
@@ -108,6 +122,7 @@ function readFilters(): RankFilters {
     area: q.area ? String(q.area) : undefined,
     priceMin,
     priceMax,
+    days: q.days ? Number(q.days) : undefined,
   }
 }
 
@@ -166,6 +181,7 @@ function onFilterChange(next: RankFilters) {
   if (next.area) query.area = next.area
   if (next.priceMin !== undefined) query.price_min = String(next.priceMin)
   if (next.priceMax !== undefined) query.price_max = String(next.priceMax)
+  if (next.days !== undefined) query.days = String(next.days)
   router.replace({ path: '/rank', query })
   reload()
 }
@@ -174,11 +190,16 @@ function openDetail(item: RankItem) {
   router.push({ path: `/detail/${item.restaurant_id}` })
 }
 
-function onShare() {
-  shareLink({
-    title: `${city.value}苍蝇馆子榜`,
-    text: '本地人才知道的宝藏小店',
-    url: shareUrl(),
+function toMap() {
+  router.push({ path: '/map', query: { ...route.query } })
+}
+
+/** 榜单分享图：取当前已加载的 Top5（文档 9.2 保存图片） */
+function rankPoster() {
+  return renderRankPoster({
+    city: city.value,
+    items: items.value,
+    baseUrl: window.location.origin,
   })
 }
 
@@ -190,6 +211,7 @@ function shareUrl(): string {
   if (f.area) query.area = f.area
   if (f.priceMin !== undefined) query.price_min = String(f.priceMin)
   if (f.priceMax !== undefined) query.price_max = String(f.priceMax)
+  if (f.days !== undefined) query.days = String(f.days)
   return `${window.location.origin}/rank?${new URLSearchParams(query).toString()}`
 }
 </script>
@@ -229,5 +251,11 @@ function shareUrl(): string {
 
 .rank__title .text-sub {
   margin: 2px 0 0;
+}
+
+.rank__actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
 }
 </style>

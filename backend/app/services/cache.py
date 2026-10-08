@@ -38,8 +38,18 @@ class RankCache:
         price_min: float | None,
         price_max: float | None,
         area: str | None,
+        days: int | None = None,
     ) -> str:
-        parts = [city, page, page_size, cuisine or "", price_min or "", price_max or "", area or ""]
+        parts = [
+            city,
+            page,
+            page_size,
+            cuisine or "",
+            price_min or "",
+            price_max or "",
+            area or "",
+            days or "",
+        ]
         return "rank:" + ":".join(str(p) for p in parts)
 
     def get(self, key: str) -> dict | None:

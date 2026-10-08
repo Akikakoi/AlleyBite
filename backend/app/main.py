@@ -824,9 +824,15 @@ def rank(
     price_min: float | None = None,
     price_max: float | None = None,
     area: str | None = None,
+    days: int | None = None,
     session: Session = Depends(get_session),
 ):
-    """读取该城市最新榜单快照（文档 8.2）。无快照 → 2001 语义。"""
+    """读取该城市最新榜单快照（文档 8.2）。无快照 → 2001 语义。
+
+    days 为时间维度（文档 2.2 V1.1）：传 90 表示只看近 90 天内被提及的店。
+    """
+    if days is not None and days <= 0:
+        raise HTTPException(status_code=400, detail="days 必须为正整数")
     data = get_rank(
         session,
         city,
@@ -836,6 +842,7 @@ def rank(
         price_min=price_min,
         price_max=price_max,
         area=area,
+        days=min(days, 3650) if days else None,
         cache=rank_cache,
     )
     if data is None:

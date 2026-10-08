@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -152,6 +152,36 @@ def test_get_rank_pagination_and_filters(session):
 def test_get_rank_returns_none_without_snapshot(session):
     assert get_rank(session, "成都") is None
     assert get_latest_snapshot(session, "成都") is None
+
+
+def test_get_rank_days_filter(session):
+    """时间维度（文档 2.2 V1.1）：近 90 天只保留窗口内提及的店，名次重排。"""
+    settings = make_settings()
+    # 甲店 10 天前 / 乙店 200 天前 / 丙店 10 天前 / 丁店恰好 90 天前（边界，应保留）
+    specs = [
+        ("甲店", timedelta(days=10)),
+        ("乙店", timedelta(days=200)),
+        ("丙店", timedelta(days=10)),
+        ("丁店", timedelta(days=90)),
+    ]
+    for shop, delta in specs:
+        mention = _seed_mention(session, shop)
+        raw = session.get(RawContent, mention.raw_content_id)
+        raw.published_at = NOW - delta
+    align_mentions(session, settings=settings)
+    session.commit()
+
+    build_rank_snapshot(session, "成都", settings=settings, now=NOW)
+    session.commit()
+
+    all_items = get_rank(session, "成都")["items"]
+    assert {i["name"] for i in all_items} == {"甲店", "乙店", "丙店", "丁店"}
+    assert [i["rank"] for i in all_items] == [1, 2, 3, 4]
+
+    recent = get_rank(session, "成都", days=90)["items"]
+    assert {i["name"] for i in recent} == {"甲店", "丙店", "丁店"}
+    assert [i["rank"] for i in recent] == [1, 2, 3]
+    assert all(i["name"] != "乙店" for i in recent)
 
 
 def test_latest_snapshot_is_returned(session):
