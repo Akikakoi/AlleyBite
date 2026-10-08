@@ -14,6 +14,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '榜单' },
   },
   {
+    path: '/map',
+    name: 'map',
+    component: () => import('@/views/map/MapView.vue'),
+    meta: { title: '地图模式' },
+  },
+  {
     path: '/detail/:id',
     name: 'detail',
     component: () => import('@/views/detail/DetailView.vue'),

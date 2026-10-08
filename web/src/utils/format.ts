@@ -15,6 +15,10 @@ export function formatDate(iso: string | null | undefined): string {
 }
 
 const SOURCE_LABELS: Record<string, string> = {
+  seed: '公开报道',
+  html_list: '官方榜单',
+  sample: '演示数据',
+  roundup: '演示合集',
   dianping: '大众点评',
   xiaohongshu: '小红书',
   forum: '本地论坛',

@@ -106,7 +106,7 @@
       </p>
 
       <div class="detail__actions">
-        <van-button round plain type="primary" @click="onShare">分享这家店</van-button>
+        <van-button round plain type="primary" @click="showShare = true">分享这家店</van-button>
         <van-button round plain @click="onFeedback">纠错</van-button>
       </div>
 
@@ -159,12 +159,21 @@
           提交
         </van-button>
       </van-popup>
+
+      <ShareSheet
+        v-model:show="showShare"
+        :title="detail.name"
+        :text="`人均 ${formatPrice(detail.avg_price)} · ${detail.area ?? ''}`"
+        :url="shareUrl"
+        :filename="`${detail.name}.png`"
+        :poster="shopPoster"
+      />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 
@@ -173,9 +182,11 @@ import { submitFeedback } from '@/api/feedback'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import KeywordTag from '@/components/KeywordTag.vue'
+import ShareSheet from '@/components/ShareSheet.vue'
 import type { FeedbackType, RestaurantDetail, SourceRef } from '@/types'
+import { amapNavigationUrl } from '@/utils/amap'
 import { formatPrice, formatScore, sourceLabel } from '@/utils/format'
-import { shareLink } from '@/utils/share'
+import { renderShopPoster } from '@/utils/shareImage'
 
 const FEEDBACK_TYPES: { value: FeedbackType; label: string }[] = [
   { value: 'info', label: '信息有误' },
@@ -190,6 +201,8 @@ const router = useRouter()
 const detail = ref<RestaurantDetail | null>(null)
 const state = ref<'loading' | 'ready' | 'error' | 'notfound'>('loading')
 const errorMessage = ref('')
+const showShare = ref(false)
+const shareUrl = computed(() => window.location.href)
 
 const showFeedback = ref(false)
 const submitting = ref(false)
@@ -215,12 +228,9 @@ async function load() {
 }
 
 function navigate() {
-  if (!detail.value?.address) return
-  window.open(
-    `https://uri.amap.com/search?keyword=${encodeURIComponent(detail.value.address)}`,
-    '_blank',
-    'noopener',
-  )
+  const target = detail.value
+  if (!target?.address) return
+  window.open(amapNavigationUrl(target.address, target.location), '_blank', 'noopener')
 }
 
 function openSource(source: SourceRef) {
@@ -234,13 +244,10 @@ function openSource(source: SourceRef) {
   })
 }
 
-function onShare() {
-  if (!detail.value) return
-  shareLink({
-    title: detail.value.name,
-    text: `¥${detail.value.avg_price ?? '待补充'} · ${detail.value.area ?? ''}`,
-    url: window.location.href,
-  })
+/** 店铺分享图（文档 9.2 保存图片） */
+function shopPoster() {
+  if (!detail.value) return Promise.reject(new Error('店铺未加载'))
+  return renderShopPoster({ detail: detail.value, baseUrl: window.location.origin })
 }
 
 function onFeedback() {
