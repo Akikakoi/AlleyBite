@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..core.config import Settings, get_settings
 from ..db.models import City, Mention as MentionRow, RankSnapshot, Restaurant
 from .cache import RankCache
-from .scoring import to_utc
+from .scoring import apply_bayesian_smooth, to_utc
 from .scoring_service import collect_shop_scores, score_one_restaurant
 
 ALGORITHM_VER = "score-v1"
@@ -137,6 +137,17 @@ def build_restaurant_detail(
     score = score_one_restaurant(session, restaurant_id, settings=settings, now=now)
     enriched = _enrich_from_mentions(session, restaurant_id, limit=MAX_DETAIL_SOURCES)
 
+    # 展示分优先取最新榜单快照的城市内分位分（与榜单页口径一致）；
+    # 未上榜/无快照时回退实时质量分
+    display_score = score.score if score else 0.0
+    if restaurant.city is not None:
+        snapshot = get_latest_snapshot(session, restaurant.city.name)
+        if snapshot and snapshot.items:
+            for item in snapshot.items:
+                if item.get("restaurant_id") == restaurant.id:
+                    display_score = item.get("display_score", item.get("score", display_score))
+                    break
+
     location = None
     if restaurant.latitude is not None and restaurant.longitude is not None:
         location = {"lat": restaurant.latitude, "lng": restaurant.longitude}
@@ -150,7 +161,7 @@ def build_restaurant_detail(
         "cuisine": restaurant.cuisine,
         "avg_price": restaurant.avg_price,
         "status": restaurant.status,
-        "score": score.score if score else 0.0,
+        "score": display_score,
         "exclude_reason": score.exclude_reason if score else None,
         "mention_count": enriched["mention_count"],
         "last_mentioned_at": enriched["last_mentioned_at"],
@@ -188,9 +199,22 @@ def build_rank_snapshot(
         raise LookupError(f"城市不存在：{city_hint}")
 
     scores = collect_shop_scores(session, city_hint=city_hint, settings=settings, now=now)
+    # 贝叶斯平均（文档 6.2 演进）：小样本店收敛到城市先验，替代线性置信压分
+    apply_bayesian_smooth(scores, settings.score_bayes_prior)
     ranked = [s for s in scores if s.restaurant_id is not None and not s.excluded][:top_n]
 
-    items = [_build_item(session, s, rank=i) for i, s in enumerate(ranked, start=1)]
+    total = len(ranked)
+    items = []
+    for i, s in enumerate(ranked, start=1):
+        item = _build_item(session, s, rank=i)
+        # 城市内分位显示分（1.0–9.9）：跨城观感公平，Top1≈9.9、末位 1.0；
+        # score 字段保留贝叶斯绝对分（排序与数据用途）
+        if total > 1:
+            pct = (total - i) / (total - 1)
+        else:
+            pct = 1.0
+        item["display_score"] = round(1 + 8.9 * pct, 1)
+        items.append(item)
 
     snapshot = RankSnapshot(
         city_id=city.id, generated_at=now, algorithm_ver=ALGORITHM_VER, items=items

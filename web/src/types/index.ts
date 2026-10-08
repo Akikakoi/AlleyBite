@@ -25,6 +25,8 @@ export interface RankItem {
   cuisine: string | null
   avg_price: number | null
   score: number
+  /** 城市内分位显示分（1.0–9.9，与榜单页口径一致）；无快照时可能缺失 */
+  display_score?: number
   praise_keywords: string[]
   complaints: string[]
   recommended_dishes: string[]
@@ -53,6 +55,8 @@ export interface RestaurantDetail {
   avg_price: number | null
   status: string
   score: number
+  /** 城市内分位显示分（有榜单快照时后端直接给出） */
+  display_score?: number
   exclude_reason: string | null
   mention_count: number
   last_mentioned_at: string | null

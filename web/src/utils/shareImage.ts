@@ -193,7 +193,7 @@ export async function renderRankPoster({
     ctx.fillStyle = COLORS.primary
     ctx.font = `bold 32px ${FONT}`
     ctx.textAlign = 'right'
-    ctx.fillText(formatScore(item.score), WIDTH - PAD - 24, y + 62)
+    ctx.fillText(formatScore(item.display_score ?? item.score), WIDTH - PAD - 24, y + 62)
     ctx.textAlign = 'left'
 
     ctx.fillStyle = COLORS.sub
@@ -247,7 +247,7 @@ export async function renderShopPoster({
   ctx.fill()
   ctx.fillStyle = COLORS.primary
   ctx.font = `bold 40px ${FONT}`
-  ctx.fillText(formatScore(detail.score), PAD + 24, 226)
+  ctx.fillText(formatScore(detail.display_score ?? detail.score), PAD + 24, 226)
   ctx.fillStyle = COLORS.sub
   ctx.font = `22px ${FONT}`
   ctx.fillText('综合分', PAD + 118, 226)

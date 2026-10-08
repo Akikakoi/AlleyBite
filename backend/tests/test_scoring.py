@@ -13,6 +13,7 @@ from app.services.alignment import align_mentions
 from app.services.extract_pipeline import extract_raw_content
 from app.services.ingest import compute_content_hash, ingest_raw_content
 from app.services.scoring import (
+    apply_bayesian_smooth,
     FEATURE_WEIGHTS,
     MentionFact,
     ShopSignals,
@@ -94,18 +95,35 @@ def test_score_shop_full_formula():
     assert result.base_score == 0.765
     assert result.time_decay == 1.0
     assert result.confidence_factor == 1.0
-    assert result.score == 76.5
+    assert result.score == 7.7  # 10 分制，一位小数
     assert result.excluded is False
 
 
-def test_score_shop_confidence_damps_single_mention():
+def test_score_shop_single_mention_smoothed_by_bayesian():
+    """单条证据的店不再被线性压分（质量分如实），压分交给聚合层贝叶斯平均。"""
     signals = ShopSignals(
         shop_key="x", display_name="x", mention_count=1, independent_source_count=1,
         positive_count=1, intensity_sum=1.0, latest_at=NOW,
     )
     result = score_shop(signals, settings=make_settings(), now=NOW)
-    assert result.confidence_factor == 0.3333
-    assert result.score < 40  # 单条评论不能上榜
+    assert result.confidence_factor == 0.3333  # 仍作为信息展示
+    assert result.score == 4.4  # 质量分如实（10 分制一位小数）
+
+    # 聚合层：单条店在城市批内被贝叶斯平滑收敛到先验附近
+    good = ShopSignals(
+        shop_key="y", display_name="y", mention_count=8, independent_source_count=8,
+        positive_count=8, intensity_sum=8.0, uniqueness_hits=2, paradox_good_count=1,
+        earliest_at=NOW - timedelta(days=400), latest_at=NOW,
+    )
+    scores = [
+        score_shop(signals, settings=make_settings(), now=NOW),
+        score_shop(good, settings=make_settings(), now=NOW),
+    ]
+    apply_bayesian_smooth(scores, prior_strength=2.0)
+    single, solid = scores
+    assert solid.score > single.score  # 好店仍显著高于单条店
+    assert single.score > 4.4  # 但被先验抬升而非粗暴压低
+    assert all(0.0 <= s.score <= 10.0 for s in scores)
 
 
 # --- 硬规则（6.3） ----------------------------------------------------------

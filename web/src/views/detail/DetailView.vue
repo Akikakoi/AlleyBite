@@ -32,7 +32,7 @@
           </p>
         </div>
         <div class="detail__score">
-          <span class="detail__score-num">{{ formatScore(detail.score) }}</span>
+          <span class="detail__score-num">{{ formatScore(detail.display_score ?? detail.score) }}</span>
           <span class="text-sub">综合分</span>
         </div>
       </section>

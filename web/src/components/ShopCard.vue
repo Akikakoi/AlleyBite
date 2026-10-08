@@ -7,7 +7,7 @@
     <div class="shop-card__body">
       <div class="shop-card__head">
         <h3 class="shop-card__name">{{ item.name }}</h3>
-        <span class="shop-card__score">{{ formatScore(item.score) }}</span>
+        <span class="shop-card__score">{{ formatScore(item.display_score ?? item.score) }}</span>
       </div>
 
       <p class="text-sub shop-card__meta">

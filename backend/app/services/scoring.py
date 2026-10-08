@@ -4,7 +4,7 @@
 不直接访问数据库（ORM 聚合见 scoring_service.py），便于单测与后续替换数据源。
 
 公式（6.2）：
-    score = 100 × ( Σ wᵢ·fᵢ − Σ penaltyⱼ ) × time_decay × confidence_factor
+    score = 10 × ( Σ wᵢ·fᵢ − Σ penaltyⱼ ) × time_decay × confidence_factor
 
 说明：
 - fᵢ / penaltyⱼ 均归一化到 [0,1]，权重见 FEATURE_WEIGHTS。
@@ -320,8 +320,10 @@ def score_shop(
     if rules.excluded:
         score = 0.0
     else:
-        score = 100 * max(0.0, base_score) * decay * confidence * rules.multiplier
-        score = round(_clamp01(score / 100) * 100, 2)
+        # 未平滑质量分（10 分制）：置信处理改由聚合层贝叶斯平均承担（见
+        # apply_bayesian_smooth），单店分数不再被 mention 数线性压低
+        score = 10 * max(0.0, base_score) * decay * rules.multiplier
+        score = round(_clamp01(score / 10) * 10, 1)
 
     return ShopScore(
         shop_key=signals.shop_key,
@@ -426,3 +428,27 @@ def aggregate_shop(
         address=address,
         facts=list(facts),
     )
+
+# --- 贝叶斯平均（替代线性置信因子，文档 6.2 演进） ---------------------------
+
+def apply_bayesian_smooth(
+    scores: list[ShopScore], prior_strength: float
+) -> list[ShopScore]:
+    """对同一批（同城）候选店做贝叶斯平均，就地更新 score 字段并返回。
+
+    final = (C × prior + n × quality) / (C + n)
+    - prior：本批未剔除店铺质量分的均值（先验：'该城市普通苍蝇馆子水平'）
+    - C：先验强度（score_bayes_prior），等效于给每家店垫 C 条'城市平均水平'证据
+    - n：mention_count；证据越少越收敛到先验，越多越尊重自身质量分
+
+    单店或全被剔除时无可估计先验，保持原分不变。
+    """
+    valid = [s for s in scores if not s.excluded and s.mention_count > 0]
+    if prior_strength <= 0 or len(valid) < 2:
+        return scores
+    prior = sum(s.score for s in valid) / len(valid)
+    for s in valid:
+        n = s.mention_count
+        smoothed = (prior_strength * prior + n * s.score) / (prior_strength + n)
+        s.score = round(max(0.0, min(10.0, smoothed)), 1)
+    return scores
