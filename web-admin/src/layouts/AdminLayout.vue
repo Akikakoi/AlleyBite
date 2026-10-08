@@ -9,6 +9,10 @@
         </div>
       </div>
       <el-menu :default-active="activeMenu" class="admin-menu" router>
+        <el-menu-item index="/dashboard">
+          <el-icon><TrendCharts /></el-icon>
+          <span>数据看板</span>
+        </el-menu-item>
         <el-menu-item index="/reviews">
           <el-icon><List /></el-icon>
           <span>店铺审核</span>
@@ -28,6 +32,10 @@
         <el-menu-item index="/audit">
           <el-icon><Document /></el-icon>
           <span>审计日志</span>
+        </el-menu-item>
+        <el-menu-item v-if="isSuperadmin" index="/users">
+          <el-icon><User /></el-icon>
+          <span>账号管理</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -49,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChatDotRound, Document, List, Monitor, Shop } from '@element-plus/icons-vue'
+import { ChatDotRound, Document, List, Monitor, Shop, TrendCharts, User } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -62,6 +70,7 @@ const router = useRouter()
 
 const activeMenu = computed(() => route.path)
 const pageTitle = computed(() => (route.meta.title as string) || '管理后台')
+const isSuperadmin = computed(() => auth.role === 'superadmin')
 
 async function handleLogout() {
   try {

@@ -522,3 +522,118 @@ def test_audit_list_filters_by_action(client, session, admin_headers):
     ).json()["data"]
     assert [r["action"] for r in data] == ["feedback.update_status"]
     assert "ip_hash" not in data[0]
+
+# --- RBAC（文档 9.5 账号与权限）---------------------------------------------
+
+
+def _headers_for(client, session, username: str, role: str) -> dict:
+    """按指定角色建号并登录取令牌。"""
+    set_admin_password(session, username, "pw", settings=app_main.settings, role=role)
+    resp = client.post("/api/v1/admin/login", json={"username": username, "password": "pw"})
+    return {"Authorization": f"Bearer {resp.json()['data']['token']}"}
+
+
+def test_rbac_reviewer_can_read_but_not_write(client, session):
+    headers = _headers_for(client, session, "rev", "reviewer")
+    assert client.get("/api/v1/admin/reviews", headers=headers).status_code == 200
+    assert client.get("/api/v1/admin/restaurants", headers=headers).status_code == 200
+    assert client.get("/api/v1/admin/crawl", headers=headers).status_code == 200
+    # 写操作越权 → 403（权限闸先于资源查找）
+    resp = client.post("/api/v1/admin/reviews/1/confirm", json={}, headers=headers)
+    assert resp.status_code == 403
+    resp = client.patch("/api/v1/admin/feedback/1", json={"status": "processing"}, headers=headers)
+    assert resp.status_code == 403
+
+
+def test_rbac_operator_can_write_but_not_manage_users(client, session):
+    headers = _headers_for(client, session, "op2", "operator")
+    # 通过权限闸到达业务层：不存在的工单返回 404 而非 403
+    resp = client.post("/api/v1/admin/reviews/999/confirm", json={}, headers=headers)
+    assert resp.status_code == 404
+    assert client.get("/api/v1/admin/users", headers=headers).status_code == 403
+    resp = client.post(
+        "/api/v1/admin/users",
+        json={"username": "x", "password": "secret66", "role": "reviewer"},
+        headers=headers,
+    )
+    assert resp.status_code == 403
+
+
+def test_rbac_superadmin_manages_users(client, session):
+    headers = _headers_for(client, session, "sa", "superadmin")
+    resp = client.get("/api/v1/admin/users", headers=headers)
+    assert resp.status_code == 200
+    assert "sa" in {u["username"] for u in resp.json()["data"]}
+
+    resp = client.post(
+        "/api/v1/admin/users",
+        json={"username": "newbie", "password": "secret66", "role": "reviewer"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["role"] == "reviewer"
+
+    # 新账号立即可登录，角色生效
+    login = client.post(
+        "/api/v1/admin/login", json={"username": "newbie", "password": "secret66"}
+    )
+    assert login.status_code == 200
+    assert login.json()["data"]["role"] == "reviewer"
+
+
+# --- 数据看板（文档 9.5 数据看板）-------------------------------------------
+
+
+def test_admin_stats_aggregates(client, session, admin_headers):
+    city = City(name="成都", status="active")
+    session.add(city)
+    session.flush()
+    session.add(Restaurant(city_id=city.id, name="甲店", name_norm="甲店", status="active"))
+    session.add(Restaurant(city_id=city.id, name="乙店", name_norm="乙店", status="blocked"))
+    rc1 = RawContent(source="seed", content_hash="h1", raw_text="x", city_hint="成都", status="extracted")
+    rc2 = RawContent(source="seed", content_hash="h2", raw_text="y", city_hint="成都", status="failed")
+    session.add_all([rc1, rc2])
+    session.flush()
+    session.add(
+        Mention(
+            raw_content_id=rc1.id,
+            shop_name_raw="甲店",
+            sentiment="positive",
+            confidence=0.9,
+            address_text="青羊区某巷",
+        )
+    )
+    session.add(Mention(raw_content_id=rc2.id, shop_name_raw="乙店", sentiment="negative", confidence=0.5))
+    session.add(
+        JobRun(job_type="rank", city_id=city.id, status="success", started_at=datetime.now(timezone.utc))
+    )
+    session.add(JobRun(job_type="crawl", status="failed", started_at=datetime.now(timezone.utc)))
+    session.commit()
+
+    resp = client.get("/api/v1/admin/stats", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    assert data["overview"]["restaurants_total"] == 2
+    assert data["overview"]["restaurants_active"] == 1
+    assert data["overview"]["mentions_total"] == 2
+    # 抽取失败率：extracted 1 / failed 1 → 0.5
+    assert data["extract"]["failure_rate"] == 0.5
+    # 地址完整率：2 条 mention 中 1 条有地址 → 0.5
+    assert data["extract"]["address_coverage"] == 0.5
+    # 任务成功率：success 1 / failed 1 → 0.5
+    assert data["jobs_summary"]["success_rate"] == 0.5
+    assert len(data["jobs_14d"]) == 14
+    assert len(data["mentions_14d"]) == 14
+    assert data["city_restaurants"][0]["city"] == "成都"
+    assert data["city_restaurants"][0]["active"] == 1
+    assert data["city_restaurants"][0]["total"] == 2
+
+
+def test_admin_stats_empty_db_zero_rates(client, session, admin_headers):
+    resp = client.get("/api/v1/admin/stats", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["overview"]["restaurants_total"] == 0
+    assert data["extract"]["failure_rate"] == 0.0
+    assert data["jobs_summary"]["success_rate"] == 0.0

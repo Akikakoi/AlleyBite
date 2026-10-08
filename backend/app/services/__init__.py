@@ -10,6 +10,7 @@ from .admin_auth import (
 )
 from .admin_service import (
     FEEDBACK_STATUSES,
+    build_admin_stats,
     crawl_overview,
     list_restaurants_admin,
     pending_reviews_detail,
@@ -107,6 +108,7 @@ __all__ = [
     "compute_content_hash",
     "confirm_review",
     "crawl_overview",
+    "build_admin_stats",
     "create_feedback",
     "ensure_bootstrap_admin",
     "estimate_tokens",

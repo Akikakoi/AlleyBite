@@ -132,3 +132,67 @@ export interface AuditItem {
   after: unknown
   created_at: string
 }
+// --- 数据看板（文档 9.5 数据看板）-------------------------------------------
+
+export interface AdminStatsOverview {
+  cities: number
+  restaurants_total: number
+  restaurants_active: number
+  mentions_total: number
+  raw_total: number
+}
+
+export interface AdminStatsExtract {
+  extracted: number
+  failed: number
+  failure_rate: number
+  avg_confidence: number
+  address_coverage: number
+}
+
+export interface AdminStatsJobsSummary {
+  success: number
+  failed: number
+  success_rate: number
+}
+
+export interface AdminStatsDayPoint {
+  date: string
+  count?: number
+  success?: number
+  failed?: number
+}
+
+export interface AdminStatsCityRow {
+  city: string
+  active: number
+  total: number
+}
+
+export interface AdminStats {
+  overview: AdminStatsOverview
+  raw_status: { status: string; count: number }[]
+  extract: AdminStatsExtract
+  jobs_summary: AdminStatsJobsSummary
+  jobs_14d: AdminStatsDayPoint[]
+  mentions_14d: AdminStatsDayPoint[]
+  city_restaurants: AdminStatsCityRow[]
+  generated_at: string
+  window_days: number
+}
+
+// --- 账号管理（文档 9.5 RBAC）-----------------------------------------------
+
+export interface AdminUserItem {
+  id: number
+  username: string
+  role: string
+  is_active: boolean
+  last_login_at: string | null
+}
+
+export interface AdminUserUpsertPayload {
+  username: string
+  password: string
+  role: 'superadmin' | 'operator' | 'reviewer'
+}

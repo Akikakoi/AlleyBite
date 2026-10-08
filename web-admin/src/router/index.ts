@@ -12,8 +12,14 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('@/layouts/AdminLayout.vue'),
-    redirect: '/reviews',
+    redirect: '/dashboard',
     children: [
+      {
+        path: 'dashboard',
+        name: 'dashboard',
+        component: () => import('@/views/DashboardView.vue'),
+        meta: { title: '数据看板' },
+      },
       {
         path: 'reviews',
         name: 'reviews',
@@ -44,9 +50,15 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AuditView.vue'),
         meta: { title: '审计日志' },
       },
+      {
+        path: 'users',
+        name: 'users',
+        component: () => import('@/views/UsersView.vue'),
+        meta: { title: '账号管理', roles: ['superadmin'] },
+      },
     ],
   },
-  { path: '/:pathMatch(.*)*', redirect: '/reviews' },
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 
 const BASE_TITLE = '苍蝇馆子 · 管理后台'
@@ -62,7 +74,12 @@ router.beforeEach((to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (auth.isLoggedIn && to.path === '/login') {
-    return { path: '/reviews' }
+    return { path: '/dashboard' }
+  }
+  // RBAC 前端闸（文档 9.5）：角色不符回看板；后端仍有同口径校验兜底
+  const roles = to.meta.roles as string[] | undefined
+  if (roles && auth.role && !roles.includes(auth.role)) {
+    return { path: '/dashboard' }
   }
   return true
 })

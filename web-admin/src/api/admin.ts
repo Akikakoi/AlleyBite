@@ -2,6 +2,9 @@ import { CRAWL_TIMEOUT } from '@/config'
 
 import { get, patch, post } from './request'
 import type {
+  AdminStats,
+  AdminUserItem,
+  AdminUserUpsertPayload,
   AliasResult,
   AuditItem,
   CrawlOverview,
@@ -100,4 +103,19 @@ export function listAudit(limit = 50, action?: string) {
     limit,
     action: action || undefined,
   })
+}
+// --- 数据看板（文档 9.5 数据看板）-------------------------------------------
+
+export function getStats(days = 14) {
+  return get<AdminStats>('/v1/admin/stats', { days })
+}
+
+// --- 账号管理（文档 9.5 RBAC，仅超管）---------------------------------------
+
+export function listUsers() {
+  return get<AdminUserItem[]>('/v1/admin/users')
+}
+
+export function upsertUser(payload: AdminUserUpsertPayload) {
+  return post<{ id: number; username: string; role: string }>('/v1/admin/users', payload)
 }

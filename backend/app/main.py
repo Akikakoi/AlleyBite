@@ -22,6 +22,7 @@ from .services import (
     align_mentions,
     authenticate,
     build_rank_snapshot,
+    build_admin_stats,
     build_restaurant_detail,
     build_restaurant_sources,
     collect_shop_scores,
@@ -51,6 +52,7 @@ from .services import (
     restaurant_share_text,
     run_all_cities,
     run_city_pipeline,
+    set_admin_password,
     set_restaurant_status,
     update_feedback_status,
     verify_token,
@@ -162,6 +164,27 @@ def require_admin(
     return user
 
 
+def require_role(*roles: str):
+    """RBAC 依赖工厂（文档 9.5 账号与权限）：限定角色访问，越权返回 403。
+
+    角色矩阵：reviewer 只读；operator 可写运营操作；superadmin 全部
+    （含账号管理）。roles 为空表示仅要求登录。
+    """
+
+    def dep(admin: AdminUser = Depends(require_admin)) -> AdminUser:
+        if roles and admin.role not in roles:
+            raise HTTPException(status_code=403, detail="当前角色无权限执行该操作")
+        return admin
+
+    return dep
+
+
+# 可写运营操作：operator 及以上（reviewer 只读）
+require_writer = require_role("operator", "superadmin")
+# 账号管理：仅 superadmin
+require_superadmin = require_role("superadmin")
+
+
 def _audit(
     request: Request,
     session: Session,
@@ -189,6 +212,14 @@ def _audit(
 class AdminLoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
+
+
+class AdminUserUpsertRequest(BaseModel):
+    """新增/重置管理后台账号（文档 9.5 RBAC，仅超管）。"""
+
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=6, max_length=128)
+    role: Literal["superadmin", "operator", "reviewer"] = "operator"
 
 
 class ConfirmReviewRequest(BaseModel):
@@ -447,7 +478,7 @@ def admin_review_confirm(
     review_id: int,
     req: ConfirmReviewRequest,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """确认灰区 mention 归并（可指定目标店铺）。"""
@@ -475,7 +506,7 @@ def admin_review_confirm(
 def admin_review_reject(
     review_id: int,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """驳回灰区归并（保持 mention 未归并）。"""
@@ -519,7 +550,7 @@ def admin_restaurant_merge(
     restaurant_id: int,
     req: MergeRequest,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """店铺合并（文档 9.5）：source 并入 target，危险操作需前端二次确认。"""
@@ -559,7 +590,7 @@ def admin_restaurant_alias(
     restaurant_id: int,
     req: AliasRequest,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """人工确认店铺别名（文档 9.5）。"""
@@ -589,7 +620,7 @@ def admin_restaurant_status(
     restaurant_id: int,
     req: RestaurantStatusRequest,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """屏蔽 / 恢复店铺（文档 9.5）；屏蔽后下次榜单重排即被剔除。"""
@@ -627,7 +658,7 @@ def admin_crawl(
 def admin_crawl_run(
     req: CrawlRunRequest,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """手动触发采集跑批（文档 9.5）；同步执行并落 job_run。"""
@@ -693,7 +724,7 @@ def admin_feedback_update(
     feedback_id: int,
     req: FeedbackStatusRequest,
     request: Request,
-    admin: AdminUser = Depends(require_admin),
+    admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
     """工单状态流转（文档 9.5）：pending → processing → resolved/rejected。"""
@@ -740,6 +771,62 @@ def admin_audit(
             for r in list_audit(session, limit=limit, action=action)
         ]
     )
+
+
+@app.get("/api/v1/admin/users")
+def admin_users(
+    _: AdminUser = Depends(require_superadmin),
+    session: Session = Depends(get_session),
+):
+    """账号列表（文档 9.5 RBAC）：仅超管可见，口令哈希不外泄。"""
+    users = session.scalars(select(AdminUser).order_by(AdminUser.id)).all()
+    return ok(
+        [
+            {
+                "id": u.id,
+                "username": u.username,
+                "role": u.role,
+                "is_active": u.is_active,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            }
+            for u in users
+        ]
+    )
+
+
+@app.post("/api/v1/admin/users")
+def admin_user_upsert(
+    req: AdminUserUpsertRequest,
+    request: Request,
+    admin: AdminUser = Depends(require_superadmin),
+    session: Session = Depends(get_session),
+):
+    """新增/重置账号并指定角色（文档 9.5 RBAC）：仅超管，写审计日志。"""
+    user = set_admin_password(
+        session, req.username, req.password, settings=settings, role=req.role
+    )
+    _audit(
+        request,
+        session,
+        admin,
+        "admin.user_upsert",
+        target_type="admin_user",
+        target_id=user.id,
+        after={"username": user.username, "role": user.role},
+    )
+    session.commit()
+    return ok({"id": user.id, "username": user.username, "role": user.role})
+
+
+@app.get("/api/v1/admin/stats")
+def admin_stats(
+    days: int = 14,
+    _: AdminUser = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """数据看板聚合（文档 9.5 数据看板）：任意管理角色可读。"""
+    days = max(1, min(90, days))
+    return ok(build_admin_stats(session, days=days))
 
 
 # --- 分享预览（文档 9.4 / 14 章验收）----------------------------------------
