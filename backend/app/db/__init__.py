@@ -5,6 +5,7 @@ from .models import (
     AlignmentReview,
     City,
     ContentChunk,
+    Favorite,
     Feedback,
     JobRun,
     Mention,
@@ -12,6 +13,7 @@ from .models import (
     RawContent,
     Restaurant,
     ShopAlias,
+    User,
 )
 
 __all__ = [
@@ -21,6 +23,7 @@ __all__ = [
     "Base",
     "City",
     "ContentChunk",
+    "Favorite",
     "Feedback",
     "JobRun",
     "Mention",
@@ -29,6 +32,7 @@ __all__ = [
     "Restaurant",
     "SessionLocal",
     "ShopAlias",
+    "User",
     "engine",
     "get_session",
     "init_db",

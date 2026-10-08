@@ -13,14 +13,17 @@ from sqlalchemy.orm import Session
 from .core.config import assert_secure_secrets, get_settings
 from .collectors.runner import run_crawl
 from .db import SessionLocal, get_session, init_db
-from .db.models import AdminUser, City, JobRun, Restaurant
+from .db.models import AdminUser, City, JobRun, Restaurant, User
 from .services import (
     AdminAuthError,
     Extractor,
     FeedbackRateLimited,
+    UserAuthError,
+    add_favorite,
     add_manual_alias,
     align_mentions,
     authenticate,
+    authenticate_user,
     build_rank_snapshot,
     build_admin_stats,
     build_restaurant_detail,
@@ -35,10 +38,13 @@ from .services import (
     get_raw_content,
     hash_ip,
     ingest_raw_content,
+    is_favorite,
     issue_token,
+    issue_user_token,
     list_audit,
     list_cities,
     list_feedback,
+    list_favorites,
     list_pending_reviews,
     list_restaurants_admin,
     make_rank_cache,
@@ -46,6 +52,8 @@ from .services import (
     pending_reviews_detail,
     rank_share_text,
     reject_review,
+    register_user,
+    remove_favorite,
     render_share_html,
     resolve_base_url,
     resolve_og_image,
@@ -56,6 +64,7 @@ from .services import (
     set_restaurant_status,
     update_feedback_status,
     verify_token,
+    verify_user_token,
     write_audit,
 )
 from .services.metrics import (
@@ -130,6 +139,19 @@ class FeedbackRequest(BaseModel):
     contact: str | None = Field(default=None, max_length=128, description="可选联系方式")
 
 
+class AuthRequest(BaseModel):
+    """C 端注册/登录（文档 10.2 / V2.0）：用户名 + 口令换令牌。"""
+
+    username: str = Field(min_length=2, max_length=32, description="用户名")
+    password: str = Field(min_length=6, max_length=64, description="密码")
+
+
+class FavoriteRequest(BaseModel):
+    """收藏/取消收藏（文档 8.1 favorites / V2.0）。"""
+
+    restaurant_id: int = Field(description="店铺 id")
+
+
 def _client_ip(request: Request) -> str | None:
     """取真实客户端 IP：反代场景优先 X-Forwarded-For 首段。"""
     forwarded = request.headers.get("x-forwarded-for")
@@ -183,6 +205,26 @@ def require_role(*roles: str):
 require_writer = require_role("operator", "superadmin")
 # 账号管理：仅 superadmin
 require_superadmin = require_role("superadmin")
+
+
+def require_user(
+    request: Request, session: Session = Depends(get_session)
+) -> User:
+    """C 端用户态鉴权（文档 10.2 / V2.0）：Bearer 令牌，失败一律 401。"""
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else None
+    try:
+        payload = verify_user_token(token, settings=settings)
+    except UserAuthError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = session.get(User, payload.get("uid"))
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="账号不可用")
+    return user
 
 
 def _audit(
@@ -425,6 +467,96 @@ def submit_feedback(
         raise HTTPException(status_code=429, detail="提交过于频繁，请稍后再试")
     session.commit()
     return ok({"id": row.id, "status": row.status})
+
+
+# --- C 端账号与收藏（文档 10.2 账号体系 / 8.1 favorites / V2.0）--------------
+
+
+def _auth_payload(user: User, settings_obj) -> dict:
+    token, expires_at = issue_user_token(user, settings=settings_obj)
+    return {
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "username": user.username,
+    }
+
+
+@app.post("/api/v1/auth/register")
+def auth_register(req: AuthRequest, session: Session = Depends(get_session)):
+    """C 端注册（文档 10.2）：成功即视为登录，直接签发令牌。"""
+    try:
+        user = register_user(session, req.username, req.password, settings=settings)
+    except ValueError as exc:
+        code = 409 if "占用" in str(exc) else 422
+        raise HTTPException(status_code=code, detail=str(exc))
+    user.last_login_at = datetime.now(timezone.utc)
+    session.commit()
+    return ok(_auth_payload(user, settings))
+
+
+@app.post("/api/v1/auth/login")
+def auth_login(req: AuthRequest, session: Session = Depends(get_session)):
+    """C 端登录（文档 10.2）：口令换取用户态令牌，与后台令牌隔离。"""
+    try:
+        user = authenticate_user(session, req.username, req.password)
+    except UserAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    user.last_login_at = datetime.now(timezone.utc)
+    session.commit()
+    return ok(_auth_payload(user, settings))
+
+
+@app.get("/api/v1/auth/me")
+def auth_me(user: User = Depends(require_user)):
+    return ok({"username": user.username})
+
+
+@app.get("/api/v1/favorites")
+def favorites_list(
+    user: User = Depends(require_user), session: Session = Depends(get_session)
+):
+    """我的收藏列表（文档 8.1 mine / V2.0）。"""
+    return ok(list_favorites(session, user))
+
+
+@app.post("/api/v1/favorites")
+def favorites_add(
+    req: FavoriteRequest,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """收藏店铺；重复收藏幂等返回 created=False。"""
+    try:
+        _, created = add_favorite(session, user.id, req.restaurant_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ok({"restaurant_id": req.restaurant_id, "favorited": True, "created": created})
+
+
+@app.delete("/api/v1/favorites/{restaurant_id}")
+def favorites_remove(
+    restaurant_id: int,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """取消收藏；未收藏时幂等返回 favorited=False。"""
+    remove_favorite(session, user.id, restaurant_id)
+    return ok({"restaurant_id": restaurant_id, "favorited": False})
+
+
+@app.get("/api/v1/favorites/{restaurant_id}")
+def favorites_status(
+    restaurant_id: int,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """详情页收藏态查询。"""
+    return ok(
+        {
+            "restaurant_id": restaurant_id,
+            "favorited": is_favorite(session, user.id, restaurant_id),
+        }
+    )
 
 
 @app.post("/api/v1/admin/login")

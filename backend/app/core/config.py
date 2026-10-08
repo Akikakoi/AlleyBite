@@ -140,10 +140,20 @@ class Settings(BaseSettings):
     admin_token_ttl_minutes: int = 120          # 令牌有效期（分钟）
     admin_password_iterations: int = 200_000    # PBKDF2 迭代次数
 
+    # C 端账号（文档 10.2 / 12 章 V2.0）：用户名口令注册登录换 JWT 式令牌
+    user_token_secret: str = ""                 # 令牌签名密钥；留空回退 feedback_ip_salt（受众不同，不会与后台令牌串签）
+    user_token_ttl_minutes: int = 10_080        # 令牌有效期（分钟），默认 7 天
+    user_password_iterations: int = 200_000     # PBKDF2 迭代次数
+
     @property
     def admin_token_key(self) -> str:
         """管理后台令牌签名密钥：显式配置优先，否则回退到既有加盐串。"""
         return self.admin_token_secret or self.feedback_ip_salt
+
+    @property
+    def user_token_key(self) -> str:
+        """C 端令牌签名密钥：显式配置优先，否则回退到既有加盐串。"""
+        return self.user_token_secret or self.feedback_ip_salt
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -238,22 +248,19 @@ def _is_weak_secret(value: str) -> bool:
 def assert_secure_secrets(settings: Settings) -> None:
     """生产环境（debug=False）强校验关键密钥，命中弱默认值则拒绝启动。
 
-    - FEEDBACK_IP_SALT：IP 哈希加盐，同时是 ADMIN_TOKEN_SECRET 留空时的回退签名密钥
+    - FEEDBACK_IP_SALT：IP 哈希加盐，同时是后台/C 端令牌密钥留空时的回退签名密钥
     - ADMIN_TOKEN_SECRET：管理后台令牌签名密钥（留空则回退到上面的加盐串）
-
-    debug=True（本地开发/测试）不做限制，保证开箱即跑；生产漏改默认值即启动失败，
-    避免令牌可被伪造、IP 哈希可被反推。
+    - USER_TOKEN_SECRET：C 端令牌签名密钥（留空则回退到上面的加盐串；显式配置时校验）
     """
     if settings.debug:
         return
-    problems = [
-        name
-        for name, value in (
-            ("FEEDBACK_IP_SALT", settings.feedback_ip_salt),
-            ("ADMIN_TOKEN_SECRET", settings.admin_token_key),
-        )
-        if _is_weak_secret(value)
+    checks = [
+        ("FEEDBACK_IP_SALT", settings.feedback_ip_salt),
+        ("ADMIN_TOKEN_SECRET", settings.admin_token_key),
     ]
+    if settings.user_token_secret.strip():
+        checks.append(("USER_TOKEN_SECRET", settings.user_token_secret))
+    problems = [name for name, value in checks if _is_weak_secret(value)]
     if problems:
         raise InsecureConfigError(
             "生产环境（DEBUG=false）检测到弱默认密钥："

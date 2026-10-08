@@ -346,3 +346,49 @@ class AdminAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, index=True
     )
+
+
+class User(Base):
+    """C 端用户（文档 10.2 账号体系 / 12 章 V2.0）。
+
+    独立于管理后台 AdminUser；口令同样以 PBKDF2 哈希存储。
+    表名用 app_user，避开 PostgreSQL 的 user 保留字。
+    """
+
+    __tablename__ = "app_user"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    favorites: Mapped[list["Favorite"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Favorite(Base):
+    """收藏（文档 8.1 favorites / V2.0）：用户态写操作，店铺下架后条目随级联删除。"""
+
+    __tablename__ = "favorite"
+    __table_args__ = (
+        UniqueConstraint("user_id", "restaurant_id", name="uq_favorite_user_restaurant"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), index=True
+    )
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurant.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    user: Mapped[User] = relationship(back_populates="favorites")
+    restaurant: Mapped[Restaurant] = relationship()

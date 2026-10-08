@@ -33,6 +33,7 @@ from .cleaner import CleanReport, clean_text
 from .cache import RankCache, make_rank_cache
 from .extract_pipeline import ExtractionRunResult, extract_raw_content
 from .extractor import Extractor
+from .favorite_service import add_favorite, is_favorite, list_favorites, remove_favorite
 from .feedback_service import (
     FEEDBACK_TYPES,
     FeedbackRateLimited,
@@ -74,6 +75,15 @@ from .share_render import (
     resolve_og_image,
     restaurant_share_text,
 )
+from .user_auth import (
+    UserAuthError,
+    authenticate_user,
+    issue_user_token,
+    register_user,
+    validate_password,
+    validate_username,
+    verify_user_token,
+)
 
 __all__ = [
     "AdminAuthError",
@@ -94,10 +104,12 @@ __all__ = [
     "absolute_url",
     "address_similarity",
     "address_tokens",
+    "add_favorite",
     "add_manual_alias",
     "aggregate_shop",
     "align_mentions",
     "authenticate",
+    "authenticate_user",
     "build_rank_snapshot",
     "build_restaurant_detail",
     "build_restaurant_sources",
@@ -120,11 +132,14 @@ __all__ = [
     "hash_ip",
     "hash_password",
     "ingest_raw_content",
+    "is_favorite",
     "issue_token",
+    "issue_user_token",
     "list_audit",
     "list_cities",
     "list_city_names",
     "list_feedback",
+    "list_favorites",
     "list_pending_reviews",
     "list_restaurants_admin",
     "make_rank_cache",
@@ -134,7 +149,9 @@ __all__ = [
     "pending_reviews_detail",
     "rank_share_text",
     "recent_feedback_count",
+    "register_user",
     "reject_review",
+    "remove_favorite",
     "render_share_html",
     "resolve_base_url",
     "resolve_og_image",
@@ -146,7 +163,11 @@ __all__ = [
     "set_admin_password",
     "set_restaurant_status",
     "update_feedback_status",
+    "UserAuthError",
+    "validate_password",
+    "validate_username",
     "verify_password",
     "verify_token",
+    "verify_user_token",
     "write_audit",
 ]
