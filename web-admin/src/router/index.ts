@@ -45,6 +45,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '反馈工单' },
       },
       {
+        path: 'ugc',
+        name: 'ugc',
+        component: () => import('@/views/UgcView.vue'),
+        meta: { title: '打卡审核' },
+      },
+      {
         path: 'audit',
         name: 'audit',
         component: () => import('@/views/AuditView.vue'),

@@ -29,6 +29,10 @@
           <el-icon><ChatDotRound /></el-icon>
           <span>反馈工单</span>
         </el-menu-item>
+        <el-menu-item index="/ugc">
+          <el-icon><Camera /></el-icon>
+          <span>打卡审核</span>
+        </el-menu-item>
         <el-menu-item index="/audit">
           <el-icon><Document /></el-icon>
           <span>审计日志</span>
@@ -57,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChatDotRound, Document, List, Monitor, Shop, TrendCharts, User } from '@element-plus/icons-vue'
+import { Camera, ChatDotRound, Document, List, Monitor, Shop, TrendCharts, User } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

@@ -359,6 +359,8 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # 手机号（短信登录用，V2.0）：unique 可空，兼容早期纯用户名账号
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True)
     password_hash: Mapped[str] = mapped_column(String(256))
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -392,3 +394,72 @@ class Favorite(Base):
 
     user: Mapped[User] = relationship(back_populates="favorites")
     restaurant: Mapped[Restaurant] = relationship()
+
+
+class SmsCode(Base):
+    """短信验证码（文档 10.2 手机号验证码登录 / V2.0）。
+
+    只落 code 哈希与 ip_hash，不存明文验证码与原始 IP；
+    used_at 非空表示已消费，验证一次性。
+    """
+
+    __tablename__ = "sms_code"
+    __table_args__ = (Index("ix_sms_code_phone_created", "phone", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    phone: Mapped[str] = mapped_column(String(20), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    # login
+    purpose: Mapped[str] = mapped_column(String(16), default="login")
+    ip_hash: Mapped[str | None] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+
+class UgcPost(Base):
+    """用户 UGC 打卡/短评（文档 2.2 V2.0 用户 UGC 补充含图片）。
+
+    先审后显：status=approved 才对外可见；images 为相对路径列表（/uploads/...）。
+    """
+
+    __tablename__ = "ugc_post"
+    __table_args__ = (Index("ix_ugc_post_restaurant_status", "restaurant_id", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), index=True
+    )
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurant.id", ondelete="CASCADE"), index=True
+    )
+    content: Mapped[str] = mapped_column(Text)
+    images: Mapped[list | None] = mapped_column(JSON, default=list)
+    # pending | approved | rejected
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    user: Mapped[User] = relationship()
+    restaurant: Mapped[Restaurant] = relationship()
+
+
+class ViewEvent(Base):
+    """详情页浏览事件（V2.0 个性化推荐依据）：匿名也记录，user_id 可空。"""
+
+    __tablename__ = "view_event"
+    __table_args__ = (Index("ix_view_event_user_created", "user_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL"), index=True
+    )
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurant.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )

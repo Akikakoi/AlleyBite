@@ -37,3 +37,21 @@ export function fetchMe() {
     url: '/v1/auth/me',
   })
 }
+
+/** 发送短信验证码；mock 模式（后端未配短信通道）返回 dev_code 供联调 */
+export function sendSmsCode(phone: string) {
+  return request<{ mock: boolean; ttl_minutes: number; dev_code?: string }>({
+    method: 'POST',
+    url: '/v1/auth/sms/send',
+    data: { phone },
+  })
+}
+
+/** 验证码登录：无账号自动注册 */
+export function smsLogin(payload: { phone: string; code: string }) {
+  return request<AuthResult & { created: boolean }>({
+    method: 'POST',
+    url: '/v1/auth/sms/login',
+    data: payload,
+  })
+}

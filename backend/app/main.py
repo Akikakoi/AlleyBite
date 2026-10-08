@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +20,8 @@ from .services import (
     AdminAuthError,
     Extractor,
     FeedbackRateLimited,
+    SmsError,
+    UgcError,
     UserAuthError,
     add_favorite,
     add_manual_alias,
@@ -32,6 +36,7 @@ from .services import (
     confirm_review,
     crawl_overview,
     create_feedback,
+    create_ugc_post,
     ensure_bootstrap_admin,
     extract_raw_content,
     get_rank,
@@ -45,12 +50,19 @@ from .services import (
     list_cities,
     list_feedback,
     list_favorites,
+    list_my_ugc,
     list_pending_reviews,
     list_restaurants_admin,
+    list_restaurant_ugc,
+    list_ugc_admin,
+    login_or_register_via_sms,
     make_rank_cache,
     merge_restaurants,
+    normalize_phone,
     pending_reviews_detail,
     rank_share_text,
+    recommend_for_user,
+    record_view,
     reject_review,
     register_user,
     remove_favorite,
@@ -58,11 +70,15 @@ from .services import (
     resolve_base_url,
     resolve_og_image,
     restaurant_share_text,
+    review_ugc,
     run_all_cities,
     run_city_pipeline,
+    save_upload,
+    send_sms_code,
     set_admin_password,
     set_restaurant_status,
     update_feedback_status,
+    verify_sms_code,
     verify_token,
     verify_user_token,
     write_audit,
@@ -88,6 +104,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+# UGC 图片静态服务（V2.0）：目录不存在则创建；nginx 反代 /uploads/ 到这里
+_uploads_dir = Path(settings.uploads_dir)
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -150,6 +171,33 @@ class FavoriteRequest(BaseModel):
     """收藏/取消收藏（文档 8.1 favorites / V2.0）。"""
 
     restaurant_id: int = Field(description="店铺 id")
+
+
+class SmsSendRequest(BaseModel):
+    """发送短信验证码（文档 10.2）。"""
+
+    phone: str = Field(min_length=11, max_length=11, description="手机号")
+
+
+class SmsLoginRequest(BaseModel):
+    """短信验证码登录（文档 10.2）：无账号自动注册。"""
+
+    phone: str = Field(min_length=11, max_length=11, description="手机号")
+    code: str = Field(min_length=4, max_length=6, description="短信验证码")
+
+
+class UgcCreateRequest(BaseModel):
+    """发布打卡（文档 2.2 V2.0 UGC 含图片）。"""
+
+    restaurant_id: int = Field(description="店铺 id")
+    content: str = Field(min_length=1, description="打卡内容")
+    images: list[str] = Field(default_factory=list, description="图片路径列表（先调上传接口）")
+
+
+class UgcReviewRequest(BaseModel):
+    """UGC 审核状态流转。"""
+
+    status: Literal["approved", "rejected"]
 
 
 def _client_ip(request: Request) -> str | None:
@@ -225,6 +273,22 @@ def require_user(
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="账号不可用")
     return user
+
+
+def require_user_optional(
+    request: Request, session: Session = Depends(get_session)
+) -> User | None:
+    """可选登录：带合法令牌返回用户，无/无效令牌返回 None（推荐、浏览事件用）。"""
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else None
+    if not token:
+        return None
+    try:
+        payload = verify_user_token(token, settings=settings)
+    except UserAuthError:
+        return None
+    user = session.get(User, payload.get("uid"))
+    return user if user and user.is_active else None
 
 
 def _audit(
@@ -557,6 +621,161 @@ def favorites_status(
             "favorited": is_favorite(session, user.id, restaurant_id),
         }
     )
+
+
+# --- C 端短信登录 / UGC / 推荐（文档 10.2 / 2.2 V2.0）-----------------------
+
+
+@app.post("/api/v1/auth/sms/send")
+def auth_sms_send(
+    req: SmsSendRequest, request: Request, session: Session = Depends(get_session)
+):
+    """发送短信验证码：限流按手机号/IP；未配短信通道走 mock（日志打印）。"""
+    try:
+        result = send_sms_code(
+            session,
+            req.phone,
+            settings=settings,
+            ip_hash=hash_ip(_client_ip(request), settings=settings),
+        )
+    except SmsError as exc:
+        raise HTTPException(status_code=429 if "频繁" in str(exc) else 422, detail=str(exc))
+    payload = {"mock": result["mock"], "ttl_minutes": settings.sms_code_ttl_minutes}
+    if result["dev_code"]:
+        # 仅 mock（本地联调）返回验证码；生产接入真实通道后恒为 None
+        payload["dev_code"] = result["dev_code"]
+    return ok(payload)
+
+
+@app.post("/api/v1/auth/sms/login")
+def auth_sms_login(req: SmsLoginRequest, session: Session = Depends(get_session)):
+    """验证码登录：手机号无账号时自动注册，成功即签发令牌。"""
+    try:
+        verify_sms_code(session, req.phone, req.code, settings=settings)
+        user, created = login_or_register_via_sms(
+            session, normalize_phone(req.phone), settings=settings
+        )
+    except SmsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except UserAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    user.last_login_at = datetime.now(timezone.utc)
+    session.commit()
+    return ok({**_auth_payload(user, settings), "created": created})
+
+
+@app.post("/api/v1/ugc")
+def ugc_create(
+    req: UgcCreateRequest,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """发布打卡（V2.0）：先审后显，默认 pending。"""
+    try:
+        post = create_ugc_post(
+            session,
+            user.id,
+            req.restaurant_id,
+            req.content,
+            settings=settings,
+            images=req.images,
+        )
+    except UgcError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ok({"id": post.id, "status": post.status})
+
+
+@app.get("/api/v1/ugc")
+def ugc_list(
+    restaurant_id: int, limit: int = 20, session: Session = Depends(get_session)
+):
+    """店铺打卡列表（仅审核通过，浏览类接口免登录）。"""
+    return ok(list_restaurant_ugc(session, restaurant_id, limit=limit))
+
+
+@app.get("/api/v1/ugc/mine")
+def ugc_mine(
+    user: User = Depends(require_user), session: Session = Depends(get_session)
+):
+    """我的打卡（含待审/被拒）。"""
+    return ok(list_my_ugc(session, user.id))
+
+
+@app.post("/api/v1/uploads")
+async def upload_image(
+    request: Request, _: User = Depends(require_user)
+):
+    """上传打卡图片（V2.0）：单图 ≤5MB，JPG/PNG/WebP，登录用户。"""
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
+    data = await request.body()
+    try:
+        path = save_upload(data, content_type, settings=settings)
+    except UgcError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return ok({"path": path})
+
+
+@app.post("/api/v1/views")
+def record_view_event(
+    req: FavoriteRequest,
+    user: User | None = Depends(require_user_optional),
+    session: Session = Depends(get_session),
+):
+    """记录详情页浏览事件（V2.0 推荐依据）；未登录也接受（user 为 None）。"""
+    record_view(session, req.restaurant_id, user.id if user else None)
+    return ok({"recorded": True})
+
+
+@app.get("/api/v1/recommend")
+def recommend(
+    limit: int = 6,
+    user: User | None = Depends(require_user_optional),
+    session: Session = Depends(get_session),
+):
+    """个性化推荐（V2.0）：登录用户按口味召回，未登录回退全城热门。"""
+    return ok(recommend_for_user(session, user.id if user else None, limit=limit))
+
+
+@app.get("/api/v1/admin/ugc")
+def admin_ugc_list(
+    status: str | None = None,
+    limit: int = 50,
+    _: AdminUser = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """UGC 审核列表（文档 9.5 反馈处理同款流程）。"""
+    return ok(list_ugc_admin(session, status=status, limit=limit))
+
+
+@app.patch("/api/v1/admin/ugc/{post_id}")
+def admin_ugc_review(
+    post_id: int,
+    req: UgcReviewRequest,
+    request: Request,
+    admin: AdminUser = Depends(require_writer),
+    session: Session = Depends(get_session),
+):
+    """UGC 审核流转（approved/rejected），写审计日志。"""
+    try:
+        post, before = review_ugc(session, post_id, req.status)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    _audit(
+        request,
+        session,
+        admin,
+        "ugc.review",
+        target_type="ugc_post",
+        target_id=post.id,
+        before={"status": before},
+        after={"status": post.status},
+    )
+    session.commit()
+    return ok({"id": post.id, "status": post.status})
 
 
 @app.post("/api/v1/admin/login")

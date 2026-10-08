@@ -16,6 +16,7 @@ x-api-environment: &api-environment
   DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-alleybite}:${POSTGRES_PASSWORD:-alleybite}@postgres:5432/${POSTGRES_DB:-alleybite}
   REDIS_URL: redis://redis:6379/0
   SNAPSHOT_DIR: /data/snapshots
+  UPLOADS_DIR: /data/uploads
   CORS_ORIGINS: ${CORS_ORIGINS:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-dashscope}
   LLM_MODEL: ${LLM_MODEL:-qwen-plus}
@@ -95,6 +96,7 @@ services:
       <<: *api-environment
     volumes:
       - snapshots:/data/snapshots
+      - uploads:/data/uploads
     expose:
       - "8000"
     depends_on:
@@ -240,6 +242,7 @@ volumes:
   pgwal:
   redisdata:
   snapshots:
+  uploads:
   promdata:
   alertmanagerdata:
   grafanadata:

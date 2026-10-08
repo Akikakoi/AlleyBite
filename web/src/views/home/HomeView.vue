@@ -23,6 +23,28 @@
       </van-search>
     </header>
 
+    <section v-if="recommend.items.length" class="home__section">
+      <h2 class="home__label">
+        猜你想吃
+        <span class="text-sub home__label-sub">
+          {{ recommend.strategy === 'taste' ? '按你的口味' : '本站热门' }}
+        </span>
+      </h2>
+      <div class="home__recs">
+        <article
+          v-for="item in recommend.items"
+          :key="item.restaurant_id"
+          class="card home__rec"
+          @click="goDetail(item)"
+        >
+          <p class="home__rec-name">{{ item.name }}</p>
+          <p class="text-sub">
+            {{ [item.city, item.cuisine].filter(Boolean).join(' · ') || '等你探店' }}
+          </p>
+        </article>
+      </div>
+    </section>
+
     <section class="home__section">
       <h2 class="home__label">热门城市</h2>
       <EmptyState
@@ -66,11 +88,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { getCities } from '@/api/cities'
 import { ApiError } from '@/api/request'
+import { getRecommend, type RecommendData } from '@/api/recommend'
 import EmptyState from '@/components/EmptyState.vue'
 import { useCityStore } from '@/store/city'
 import { useUserStore } from '@/store/user'
@@ -83,6 +106,21 @@ const userStore = useUserStore()
 const keyword = ref('')
 const cities = ref<City[]>([])
 const error = ref('')
+const recommend = reactive<RecommendData>({ strategy: 'hot', items: [] })
+
+async function loadRecommend() {
+  try {
+    const data = await getRecommend(4)
+    recommend.strategy = data.strategy
+    recommend.items = data.items
+  } catch {
+    // 推荐失败静默：非核心路径
+  }
+}
+
+function goDetail(item: { restaurant_id: number }) {
+  router.push({ path: `/detail/${item.restaurant_id}` })
+}
 
 async function load() {
   error.value = ''
@@ -100,7 +138,10 @@ function go(name: string) {
   router.push({ path: '/rank', query: { city: value } })
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadRecommend()
+})
 </script>
 
 <style scoped>
@@ -144,6 +185,40 @@ onMounted(load)
 
 .home__section {
   margin-top: 28px;
+}
+
+.home__label-sub {
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.home__recs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .home__recs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.home__rec {
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.home__rec-name {
+  margin: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home__rec p + p {
+  margin: 2px 0 0;
 }
 
 .home__label {

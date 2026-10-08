@@ -20,6 +20,12 @@
         <span class="mine__entry-arrow">›</span>
       </section>
 
+      <section class="card mine__entry" @click="router.push('/mine/posts')">
+        <span class="mine__entry-icon">✎</span>
+        <span class="mine__entry-label">我的打卡</span>
+        <span class="mine__entry-arrow">›</span>
+      </section>
+
       <van-button
         class="mine__logout"
         round

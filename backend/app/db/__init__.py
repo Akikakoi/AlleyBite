@@ -13,7 +13,10 @@ from .models import (
     RawContent,
     Restaurant,
     ShopAlias,
+    SmsCode,
+    UgcPost,
     User,
+    ViewEvent,
 )
 
 __all__ = [
@@ -32,7 +35,10 @@ __all__ = [
     "Restaurant",
     "SessionLocal",
     "ShopAlias",
+    "SmsCode",
+    "UgcPost",
     "User",
+    "ViewEvent",
     "engine",
     "get_session",
     "init_db",

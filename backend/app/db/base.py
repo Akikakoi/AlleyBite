@@ -26,7 +26,10 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "area": "VARCHAR(64)",
         "cuisine": "VARCHAR(64)",
         "avg_price": "FLOAT",
-    }
+    },
+    "app_user": {
+        "phone": "VARCHAR(20)",
+    },
 }
 
 

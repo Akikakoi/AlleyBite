@@ -19,6 +19,7 @@ import type {
   RestaurantStatusResult,
   ReviewActionResult,
   ReviewItem,
+  UgcItem,
 } from './types'
 
 export function login(username: string, password: string) {
@@ -118,4 +119,17 @@ export function listUsers() {
 
 export function upsertUser(payload: AdminUserUpsertPayload) {
   return post<{ id: number; username: string; role: string }>('/v1/admin/users', payload)
+}
+
+// --- UGC 打卡审核（V2.0）------------------------------------------------------
+
+export function listUgc(params: { status?: string; limit?: number } = {}) {
+  return get<UgcItem[]>('/v1/admin/ugc', {
+    status: params.status,
+    limit: params.limit ?? 50,
+  })
+}
+
+export function reviewUgc(id: number, status: 'approved' | 'rejected') {
+  return patch<UgcItem>(`/v1/admin/ugc/${id}`, { status })
 }

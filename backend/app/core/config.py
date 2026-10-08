@@ -148,6 +148,21 @@ class Settings(BaseSettings):
     user_token_ttl_minutes: int = 10_080        # 令牌有效期（分钟），默认 7 天
     user_password_iterations: int = 200_000     # PBKDF2 迭代次数
 
+    # 短信验证码（文档 10.2 手机号验证码登录）：未配 sms_api_key 时走 mock（日志打印验证码）
+    sms_api_key: str = ""
+    sms_api_secret: str = ""                    # 供应商密钥（按所选厂商语义使用）
+    sms_sign_name: str = ""                     # 短信签名
+    sms_template_code: str = ""                 # 模板 ID
+    sms_code_ttl_minutes: int = 10              # 验证码有效期（分钟）
+    sms_send_per_phone_hourly: int = 5          # 同手机号每小时最多发送条数
+    sms_send_per_ip_hourly: int = 20            # 同 IP 每小时最多发送条数
+
+    # UGC 打卡（文档 2.2 V2.0 用户 UGC 补充含图片）：先审后显
+    ugc_content_max_len: int = 300              # 打卡正文长度上限
+    ugc_images_max: int = 3                     # 每条最多图片数
+    ugc_image_max_bytes: int = 5 * 1024 * 1024  # 单图大小上限（5MB）
+    uploads_dir: str = "./uploads"              # 图片存储目录（生产挂卷，nginx 反代 /uploads/）
+
     @property
     def admin_token_key(self) -> str:
         """管理后台令牌签名密钥：显式配置优先，否则回退到既有加盐串。"""

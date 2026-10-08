@@ -205,3 +205,16 @@ export interface AdminUserUpsertPayload {
   password: string
   role: 'superadmin' | 'operator' | 'reviewer'
 }
+
+export type UgcStatus = 'pending' | 'approved' | 'rejected'
+
+export interface UgcItem {
+  id: number
+  restaurant_id: number
+  restaurant_name: string | null
+  username: string
+  content: string
+  images: string[]
+  status: UgcStatus
+  created_at: string | null
+}

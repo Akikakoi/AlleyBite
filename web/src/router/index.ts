@@ -46,6 +46,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '我的收藏', requiresAuth: true },
   },
   {
+    path: '/mine/posts',
+    name: 'myposts',
+    component: () => import('@/views/mine/MyPostsView.vue'),
+    meta: { title: '我的打卡', requiresAuth: true },
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/mine/LoginView.vue'),

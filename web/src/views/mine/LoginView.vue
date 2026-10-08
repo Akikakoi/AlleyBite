@@ -2,19 +2,20 @@
   <div class="page login">
     <header class="login__bar">
       <button class="login__back" aria-label="返回" @click="router.back()">‹</button>
-      <span class="text-sub">{{ mode === 'login' ? '登录' : '注册' }}</span>
+      <span class="text-sub">{{ titleText }}</span>
     </header>
 
     <section class="card login__card">
       <h1 class="page-title">欢迎来到苍蝇馆子美食发现器</h1>
-      <p class="text-sub login__sub">登录后可以收藏店铺，随时回来翻榜单</p>
+      <p class="text-sub login__sub">登录后可以收藏店铺、发布打卡，随时回来翻榜单</p>
 
-      <van-tabs v-model:active="mode" shrink>
+      <van-tabs v-model:active="active" shrink>
         <van-tab title="登录" name="login" />
         <van-tab title="注册" name="register" />
+        <van-tab title="验证码登录" name="sms" />
       </van-tabs>
 
-      <van-form class="login__form" @submit.prevent="submit">
+      <van-form v-if="active !== 'sms'" class="login__form" @submit.prevent="submit">
         <van-field
           v-model="form.username"
           name="username"
@@ -40,21 +41,72 @@
           :loading="submitting"
           native-type="submit"
         >
-          {{ mode === 'login' ? '登录' : '注册并登录' }}
+          {{ active === 'login' ? '登录' : '注册并登录' }}
         </van-button>
       </van-form>
 
-      <p class="text-sub login__note">仅用于收藏功能，不收集其他个人信息</p>
+      <van-form v-else class="login__form" @submit.prevent="submitSms">
+        <van-field
+          v-model="smsForm.phone"
+          name="phone"
+          label="手机号"
+          type="tel"
+          maxlength="11"
+          placeholder="11 位手机号"
+          :rules="[
+            { required: true, message: '请输入手机号' },
+            { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' },
+          ]"
+        />
+        <van-field
+          v-model="smsForm.code"
+          name="code"
+          label="验证码"
+          type="digit"
+          maxlength="6"
+          placeholder="6 位验证码"
+          :rules="[{ required: true, message: '请输入验证码' }]"
+        >
+          <template #button>
+            <van-button
+              size="small"
+              round
+              plain
+              type="primary"
+              :disabled="countdown > 0"
+              :loading="sending"
+              @click="onSendCode"
+            >
+              {{ countdown > 0 ? `${countdown}s 后重发` : '发送验证码' }}
+            </van-button>
+          </template>
+        </van-field>
+        <p v-if="mockCode" class="text-sub login__devcode">
+          本地联调验证码：{{ mockCode }}
+        </p>
+        <van-button
+          class="login__submit"
+          type="primary"
+          round
+          block
+          :loading="submitting"
+          native-type="submit"
+        >
+          登录
+        </van-button>
+      </van-form>
+
+      <p class="text-sub login__note">仅用于收藏与打卡功能，不收集其他个人信息</p>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 
-import { login, register } from '@/api/auth'
+import { login, register, sendSmsCode, smsLogin } from '@/api/auth'
 import { ApiError } from '@/api/request'
 import { useUserStore } from '@/store/user'
 
@@ -62,9 +114,65 @@ const route = useRoute()
 const router = useRouter()
 const store = useUserStore()
 
-const mode = ref<'login' | 'register'>('login')
+const active = ref<'login' | 'register' | 'sms'>('login')
 const submitting = ref(false)
 const form = ref({ username: '', password: '' })
+const smsForm = ref({ phone: '', code: '' })
+const sending = ref(false)
+const countdown = ref(0)
+const mockCode = ref('')
+
+const titleText = computed(() =>
+  active.value === 'login' ? '登录' : active.value === 'register' ? '注册' : '验证码登录',
+)
+
+let timer: number | undefined
+function startCountdown(seconds: number) {
+  countdown.value = seconds
+  timer = window.setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0 && timer) window.clearInterval(timer)
+  }, 1000)
+}
+onUnmounted(() => {
+  if (timer) window.clearInterval(timer)
+})
+
+async function onSendCode() {
+  const phone = smsForm.value.phone.trim()
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    showToast('请先填写正确的手机号')
+    return
+  }
+  sending.value = true
+  try {
+    const data = await sendSmsCode(phone)
+    startCountdown(60)
+    if (data.dev_code) mockCode.value = data.dev_code
+    showToast('验证码已发送')
+  } catch (err) {
+    showToast(err instanceof ApiError ? err.message : '发送失败，请稍后重试')
+  } finally {
+    sending.value = false
+  }
+}
+
+async function submitSms() {
+  const phone = smsForm.value.phone.trim()
+  const code = smsForm.value.code.trim()
+  if (!phone || !code) return
+  submitting.value = true
+  try {
+    const data = await smsLogin({ phone, code })
+    store.setSession(data.token, data.username)
+    showToast(data.created ? '注册成功' : '已登录')
+    router.push(String(route.query.redirect || '/mine'))
+  } catch (err) {
+    showToast(err instanceof ApiError ? err.message : '登录失败，请稍后重试')
+  } finally {
+    submitting.value = false
+  }
+}
 
 async function submit() {
   const username = form.value.username.trim()
@@ -76,10 +184,10 @@ async function submit() {
   }
   submitting.value = true
   try {
-    const action = mode.value === 'login' ? login : register
+    const action = active.value === 'login' ? login : register
     const data = await action({ username, password })
     store.setSession(data.token, data.username)
-    showToast(mode.value === 'login' ? '已登录' : '注册成功')
+    showToast(active.value === 'login' ? '已登录' : '注册成功')
     const redirect = String(route.query.redirect || '/mine')
     router.push(redirect)
   } catch (err) {
@@ -128,6 +236,10 @@ async function submit() {
 
 .login__submit {
   margin-top: 20px;
+}
+
+.login__devcode {
+  margin: 8px 16px 0;
 }
 
 .login__note {

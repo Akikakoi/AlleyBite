@@ -41,3 +41,4 @@ Thumbs.db
 
 # WorkBuddy 工作目录（项目记忆/临时产物，不入库）
 .workbuddy/
+backend/test_uploads/
