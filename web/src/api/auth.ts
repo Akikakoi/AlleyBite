@@ -38,20 +38,20 @@ export function fetchMe() {
   })
 }
 
-/** 发送短信验证码；mock 模式（后端未配短信通道）返回 dev_code 供联调 */
-export function sendSmsCode(phone: string) {
+/** 发送邮箱验证码；mock 模式（后端未配 SMTP 发信账号）返回 dev_code 供联调 */
+export function sendEmailCode(email: string) {
   return request<{ mock: boolean; ttl_minutes: number; dev_code?: string }>({
     method: 'POST',
-    url: '/v1/auth/sms/send',
-    data: { phone },
+    url: '/v1/auth/email/send',
+    data: { email },
   })
 }
 
 /** 验证码登录：无账号自动注册 */
-export function smsLogin(payload: { phone: string; code: string }) {
+export function emailLogin(payload: { email: string; code: string }) {
   return request<AuthResult & { created: boolean }>({
     method: 'POST',
-    url: '/v1/auth/sms/login',
+    url: '/v1/auth/email/login',
     data: payload,
   })
 }

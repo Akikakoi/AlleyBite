@@ -59,7 +59,13 @@ from .rank_service import (
     get_rank,
 )
 from .recommend_service import recommend_for_user, record_view
-from .sms_auth import SmsError, login_or_register_via_sms, normalize_phone, send_sms_code, verify_sms_code
+from .email_auth import (
+    EmailAuthError,
+    login_or_register_via_email,
+    normalize_email,
+    send_email_code,
+    verify_email_code,
+)
 from .ugc_service import (
     UgcError,
     create_ugc_post,
@@ -175,16 +181,16 @@ __all__ = [
     "save_upload",
     "score_one_restaurant",
     "score_shop",
-    "send_sms_code",
+    "send_email_code",
     "set_admin_password",
     "set_restaurant_status",
-    "SmsError",
+    "EmailAuthError",
     "update_feedback_status",
     "UserAuthError",
     "validate_password",
     "validate_username",
     "verify_password",
-    "verify_sms_code",
+    "verify_email_code",
     "verify_token",
     "verify_user_token",
     "write_audit",
@@ -192,7 +198,7 @@ __all__ = [
     "list_my_ugc",
     "list_restaurant_ugc",
     "list_ugc_admin",
-    "login_or_register_via_sms",
-    "normalize_phone",
+    "login_or_register_via_email",
+    "normalize_email",
     "UgcError",
 ]

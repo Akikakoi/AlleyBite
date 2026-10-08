@@ -1,6 +1,6 @@
-"""V2.0 新功能单测：短信验证码登录、UGC 打卡（含图片）、个性化推荐。
+"""V2.0 新功能单测：邮箱验证码登录、UGC 打卡（含图片）、个性化推荐。
 
-覆盖：验证码发送限流与 mock、验证码一次性校验、手机号登录自动注册、
+覆盖：验证码发送限流与 mock、验证码一次性校验、邮箱登录自动注册、
 UGC 发布校验/先审后显/审核流转、图片上传类型与大小校验、推荐策略降级。
 """
 
@@ -16,7 +16,7 @@ from app import main as app_main
 from app.core.config import Settings
 from app.db import get_session
 from app.db.base import Base
-from app.db.models import City, Restaurant, SmsCode, UgcPost, User, ViewEvent
+from app.db.models import City, EmailCode, Restaurant, UgcPost, User, ViewEvent
 from app.main import app
 from app.services.user_auth import register_user
 
@@ -85,71 +85,71 @@ def auth_headers(token: str) -> dict:
 # --- 短信验证码登录 -----------------------------------------------------------
 
 
-def test_sms_send_mock_returns_dev_code(client):
-    resp = client.post("/api/v1/auth/sms/send", json={"phone": "13800001234"})
+def test_email_send_mock_returns_dev_code(client):
+    resp = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["mock"] is True
     assert data["dev_code"] and len(data["dev_code"]) == 6
 
 
-def test_sms_send_rate_limit_per_phone(client):
+def test_email_send_rate_limit_per_mailbox(client):
     for _ in range(5):
-        client.post("/api/v1/auth/sms/send", json={"phone": "13800001234"})
-    limited = client.post("/api/v1/auth/sms/send", json={"phone": "13800001234"})
+        client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
+    limited = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
     assert limited.status_code == 429
 
 
-def test_sms_send_invalid_phone_422(client):
-    resp = client.post("/api/v1/auth/sms/send", json={"phone": "12345"})
+def test_email_send_invalid_address_422(client):
+    resp = client.post("/api/v1/auth/email/send", json={"email": "not-an-email"})
     assert resp.status_code == 422
 
 
-def test_sms_login_creates_account_and_reuses(client):
-    send = client.post("/api/v1/auth/sms/send", json={"phone": "13800001234"})
+def test_email_login_creates_account_and_reuses(client):
+    send = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
     code = send.json()["data"]["dev_code"]
 
     first = client.post(
-        "/api/v1/auth/sms/login", json={"phone": "13800001234", "code": code}
+        "/api/v1/auth/email/login", json={"email": "user@example.com", "code": code}
     )
     assert first.status_code == 200
     data = first.json()["data"]
     assert data["created"] is True
-    assert data["username"].startswith("用户1234")
+    assert data["username"].startswith("食客user")
 
     me = client.get("/api/v1/auth/me", headers=auth_headers(data["token"]))
     assert me.status_code == 200
 
     # 验证码一次性：重放失败
     replay = client.post(
-        "/api/v1/auth/sms/login", json={"phone": "13800001234", "code": code}
+        "/api/v1/auth/email/login", json={"email": "user@example.com", "code": code}
     )
     assert replay.status_code == 422
 
     # 再次发送登录：不新建账号
-    send2 = client.post("/api/v1/auth/sms/send", json={"phone": "13800001234"})
+    send2 = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
     code2 = send2.json()["data"]["dev_code"]
     second = client.post(
-        "/api/v1/auth/sms/login", json={"phone": "13800001234", "code": code2}
+        "/api/v1/auth/email/login", json={"email": "user@example.com", "code": code2}
     )
     assert second.json()["data"]["created"] is False
     assert second.json()["data"]["username"] == data["username"]
 
 
-def test_sms_login_wrong_code_422(client):
-    client.post("/api/v1/auth/sms/send", json={"phone": "13800001234"})
+def test_email_login_wrong_code_422(client):
+    client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
     resp = client.post(
-        "/api/v1/auth/sms/login", json={"phone": "13800001234", "code": "000000"}
+        "/api/v1/auth/email/login", json={"email": "user@example.com", "code": "000000"}
     )
     assert resp.status_code == 422
 
 
-def test_sms_login_links_existing_username_account(session, client):
+def test_email_login_links_existing_username_account(session, client):
     register_user(session, "老饕", "secret66", settings=app_main.settings)
-    send = client.post("/api/v1/auth/sms/send", json={"phone": "13900005678"})
+    send = client.post("/api/v1/auth/email/send", json={"email": "other@example.com"})
     code = send.json()["data"]["dev_code"]
     resp = client.post(
-        "/api/v1/auth/sms/login", json={"phone": "13900005678", "code": code}
+        "/api/v1/auth/email/login", json={"email": "other@example.com", "code": code}
     )
     assert resp.status_code == 200
     # 首次短信登录自动注册新账号（绑定手机号的合并留待后续账号资料功能）

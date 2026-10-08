@@ -20,7 +20,7 @@ from .services import (
     AdminAuthError,
     Extractor,
     FeedbackRateLimited,
-    SmsError,
+    EmailAuthError,
     UgcError,
     UserAuthError,
     add_favorite,
@@ -55,10 +55,10 @@ from .services import (
     list_restaurants_admin,
     list_restaurant_ugc,
     list_ugc_admin,
-    login_or_register_via_sms,
+    login_or_register_via_email,
     make_rank_cache,
     merge_restaurants,
-    normalize_phone,
+    normalize_email,
     pending_reviews_detail,
     rank_share_text,
     recommend_for_user,
@@ -74,11 +74,11 @@ from .services import (
     run_all_cities,
     run_city_pipeline,
     save_upload,
-    send_sms_code,
+    send_email_code,
     set_admin_password,
     set_restaurant_status,
     update_feedback_status,
-    verify_sms_code,
+    verify_email_code,
     verify_token,
     verify_user_token,
     write_audit,
@@ -173,17 +173,17 @@ class FavoriteRequest(BaseModel):
     restaurant_id: int = Field(description="店铺 id")
 
 
-class SmsSendRequest(BaseModel):
-    """发送短信验证码（文档 10.2）。"""
+class EmailSendRequest(BaseModel):
+    """发送邮箱验证码（文档 10.2）。"""
 
-    phone: str = Field(min_length=11, max_length=11, description="手机号")
+    email: str = Field(min_length=5, max_length=254, description="邮箱")
 
 
-class SmsLoginRequest(BaseModel):
-    """短信验证码登录（文档 10.2）：无账号自动注册。"""
+class EmailLoginRequest(BaseModel):
+    """邮箱验证码登录（文档 10.2）：无账号自动注册。"""
 
-    phone: str = Field(min_length=11, max_length=11, description="手机号")
-    code: str = Field(min_length=4, max_length=6, description="短信验证码")
+    email: str = Field(min_length=5, max_length=254, description="邮箱")
+    code: str = Field(min_length=4, max_length=6, description="邮箱验证码")
 
 
 class UgcCreateRequest(BaseModel):
@@ -626,36 +626,36 @@ def favorites_status(
 # --- C 端短信登录 / UGC / 推荐（文档 10.2 / 2.2 V2.0）-----------------------
 
 
-@app.post("/api/v1/auth/sms/send")
-def auth_sms_send(
-    req: SmsSendRequest, request: Request, session: Session = Depends(get_session)
+@app.post("/api/v1/auth/email/send")
+def auth_email_send(
+    req: EmailSendRequest, request: Request, session: Session = Depends(get_session)
 ):
-    """发送短信验证码：限流按手机号/IP；未配短信通道走 mock（日志打印）。"""
+    """发送邮箱验证码：限流按邮箱/IP；未配 SMTP 发信账号走 mock（日志打印）。"""
     try:
-        result = send_sms_code(
+        result = send_email_code(
             session,
-            req.phone,
+            req.email,
             settings=settings,
             ip_hash=hash_ip(_client_ip(request), settings=settings),
         )
-    except SmsError as exc:
+    except EmailAuthError as exc:
         raise HTTPException(status_code=429 if "频繁" in str(exc) else 422, detail=str(exc))
-    payload = {"mock": result["mock"], "ttl_minutes": settings.sms_code_ttl_minutes}
+    payload = {"mock": result["mock"], "ttl_minutes": settings.email_code_ttl_minutes}
     if result["dev_code"]:
-        # 仅 mock（本地联调）返回验证码；生产接入真实通道后恒为 None
+        # 仅 mock（本地联调）返回验证码；生产配置发信账号后恒为 None
         payload["dev_code"] = result["dev_code"]
     return ok(payload)
 
 
-@app.post("/api/v1/auth/sms/login")
-def auth_sms_login(req: SmsLoginRequest, session: Session = Depends(get_session)):
-    """验证码登录：手机号无账号时自动注册，成功即签发令牌。"""
+@app.post("/api/v1/auth/email/login")
+def auth_email_login(req: EmailLoginRequest, session: Session = Depends(get_session)):
+    """验证码登录：邮箱无账号时自动注册，成功即签发令牌。"""
     try:
-        verify_sms_code(session, req.phone, req.code, settings=settings)
-        user, created = login_or_register_via_sms(
-            session, normalize_phone(req.phone), settings=settings
+        verify_email_code(session, req.email, req.code, settings=settings)
+        user, created = login_or_register_via_email(
+            session, normalize_email(req.email), settings=settings
         )
-    except SmsError as exc:
+    except EmailAuthError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except UserAuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc))

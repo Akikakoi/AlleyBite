@@ -47,15 +47,14 @@
 
       <van-form v-else class="login__form" @submit.prevent="submitSms">
         <van-field
-          v-model="smsForm.phone"
-          name="phone"
-          label="手机号"
-          type="tel"
-          maxlength="11"
-          placeholder="11 位手机号"
+          v-model="smsForm.email"
+          name="email"
+          label="邮箱"
+          maxlength="254"
+          placeholder="邮箱地址"
           :rules="[
-            { required: true, message: '请输入手机号' },
-            { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' },
+            { required: true, message: '请输入邮箱' },
+            { pattern: /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/, message: '邮箱格式不正确' },
           ]"
         />
         <van-field
@@ -106,7 +105,7 @@ import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 
-import { login, register, sendSmsCode, smsLogin } from '@/api/auth'
+import { emailLogin, login, register, sendEmailCode } from '@/api/auth'
 import { ApiError } from '@/api/request'
 import { useUserStore } from '@/store/user'
 
@@ -117,7 +116,7 @@ const store = useUserStore()
 const active = ref<'login' | 'register' | 'sms'>('login')
 const submitting = ref(false)
 const form = ref({ username: '', password: '' })
-const smsForm = ref({ phone: '', code: '' })
+const smsForm = ref({ email: '', code: '' })
 const sending = ref(false)
 const countdown = ref(0)
 const mockCode = ref('')
@@ -139,17 +138,17 @@ onUnmounted(() => {
 })
 
 async function onSendCode() {
-  const phone = smsForm.value.phone.trim()
-  if (!/^1[3-9]\d{9}$/.test(phone)) {
-    showToast('请先填写正确的手机号')
+  const email = smsForm.value.email.trim()
+  if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
+    showToast('请先填写正确的邮箱')
     return
   }
   sending.value = true
   try {
-    const data = await sendSmsCode(phone)
+    const data = await sendEmailCode(email)
     startCountdown(60)
     if (data.dev_code) mockCode.value = data.dev_code
-    showToast('验证码已发送')
+    showToast('验证码已发送，请查收邮箱')
   } catch (err) {
     showToast(err instanceof ApiError ? err.message : '发送失败，请稍后重试')
   } finally {
@@ -158,12 +157,12 @@ async function onSendCode() {
 }
 
 async function submitSms() {
-  const phone = smsForm.value.phone.trim()
+  const email = smsForm.value.email.trim()
   const code = smsForm.value.code.trim()
-  if (!phone || !code) return
+  if (!email || !code) return
   submitting.value = true
   try {
-    const data = await smsLogin({ phone, code })
+    const data = await emailLogin({ email, code })
     store.setSession(data.token, data.username)
     showToast(data.created ? '注册成功' : '已登录')
     router.push(String(route.query.redirect || '/mine'))

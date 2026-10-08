@@ -359,8 +359,8 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    # 手机号（短信登录用，V2.0）：unique 可空，兼容早期纯用户名账号
-    phone: Mapped[str | None] = mapped_column(String(20), unique=True)
+    # 邮箱（邮箱验证码登录用，V2.0）：unique 可空，兼容早期纯用户名账号
+    email: Mapped[str | None] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(256))
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -396,18 +396,18 @@ class Favorite(Base):
     restaurant: Mapped[Restaurant] = relationship()
 
 
-class SmsCode(Base):
-    """短信验证码（文档 10.2 手机号验证码登录 / V2.0）。
+class EmailCode(Base):
+    """邮箱验证码（文档 10.2 邮箱验证码登录 / V2.0）。
 
     只落 code 哈希与 ip_hash，不存明文验证码与原始 IP；
     used_at 非空表示已消费，验证一次性。
     """
 
-    __tablename__ = "sms_code"
-    __table_args__ = (Index("ix_sms_code_phone_created", "phone", "created_at"),)
+    __tablename__ = "email_code"
+    __table_args__ = (Index("ix_email_code_email_created", "email", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    phone: Mapped[str] = mapped_column(String(20), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
     code_hash: Mapped[str] = mapped_column(String(64))
     # login
     purpose: Mapped[str] = mapped_column(String(16), default="login")

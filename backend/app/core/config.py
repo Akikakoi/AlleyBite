@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     # 打分模型（文档 6）
     score_time_half_life_days: int = 180      # 时效衰减半衰期（6.2）
     score_mention_target: int = 8             # 真实提及量饱和目标（独立来源数）
-    score_confidence_target: int = 3          # 证据充分度饱和目标（mention 数）
+    score_confidence_target: int = 3          # 证据充分度饱和目标（mention 数；展示用）
+    score_bayes_prior: float = 2.0            # 贝叶斯平均先验强度（等效垫 C 条城市平均证据；0 关闭）
     score_span_target_days: int = 365         # 沉淀时长饱和目标
     score_uniqueness_target: int = 2          # 独特性语境饱和目标
     score_paradox_target: int = 1             # 矛盾型好评饱和目标
@@ -148,14 +149,15 @@ class Settings(BaseSettings):
     user_token_ttl_minutes: int = 10_080        # 令牌有效期（分钟），默认 7 天
     user_password_iterations: int = 200_000     # PBKDF2 迭代次数
 
-    # 短信验证码（文档 10.2 手机号验证码登录）：未配 sms_api_key 时走 mock（日志打印验证码）
-    sms_api_key: str = ""
-    sms_api_secret: str = ""                    # 供应商密钥（按所选厂商语义使用）
-    sms_sign_name: str = ""                     # 短信签名
-    sms_template_code: str = ""                 # 模板 ID
-    sms_code_ttl_minutes: int = 10              # 验证码有效期（分钟）
-    sms_send_per_phone_hourly: int = 5          # 同手机号每小时最多发送条数
-    sms_send_per_ip_hourly: int = 20            # 同 IP 每小时最多发送条数
+    # 邮箱验证码（文档 10.2 邮箱验证码登录）：未配 smtp_user 时走 mock（日志打印验证码）
+    smtp_host: str = "smtp.qq.com"              # SMTP 服务器（QQ 邮箱发信）
+    smtp_port: int = 465                        # SSL 端口
+    smtp_user: str = ""                         # 发信邮箱账号；留空走 mock
+    smtp_password: str = ""                     # 发信邮箱授权码（非登录密码）
+    smtp_from_name: str = "苍蝇馆子美食发现器"   # 发件人显示名
+    email_code_ttl_minutes: int = 10            # 验证码有效期（分钟）
+    email_send_per_mailbox_hourly: int = 5      # 同邮箱每小时最多发送条数
+    email_send_per_ip_hourly: int = 20          # 同 IP 每小时最多发送条数
 
     # UGC 打卡（文档 2.2 V2.0 用户 UGC 补充含图片）：先审后显
     ugc_content_max_len: int = 300              # 打卡正文长度上限

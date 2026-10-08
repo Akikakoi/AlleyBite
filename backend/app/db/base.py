@@ -28,7 +28,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "avg_price": "FLOAT",
     },
     "app_user": {
-        "phone": "VARCHAR(20)",
+        "email": "VARCHAR(255)",
     },
 }
 
