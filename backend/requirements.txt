@@ -12,4 +12,6 @@ psycopg[binary]>=3.2
 redis>=5.0
 # 监控指标（文档 10.4）：/metrics 暴露 Prometheus 指标
 prometheus-client>=0.21
+# 调度平台（文档 4.4 / M4）：Celery worker + beat，broker 复用 Redis（db1）
+celery[redis]>=5.4
 pytest>=8.3

@@ -5,7 +5,7 @@
 #   3) docker compose up -d --build
 #   4) 访问 https://localhost/ （自签证书浏览器会提示不受信任，属预期）
 #
-# 服务：postgres / redis / api / scheduler / web(nginx 托管前端并反代 /api)
+# 服务：postgres / redis / api / worker+beat(Celery 调度，文档 4.4 M4) / web(nginx 托管前端并反代 /api)
 #       web-admin(管理后台独立入口，仅内网可访问，文档 9.5)
 #       prometheus / alertmanager / alert-bridge(飞书) / grafana（文档 10.4 监控告警）
 name: alleybite
@@ -102,10 +102,14 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  scheduler:
+  # --- 调度平台（文档 4.4 / 12 章 M4）-------------------------------------
+  # Celery worker + beat 替代 scripts/scheduler.py 常驻进程（脚本保留作本地/应急）。
+  # broker 复用 Redis（自动切 db1，与榜单缓存 db0 隔离）；SCHEDULE_ENABLED=false 时
+  # beat 不注册计划，API 的 /rank/build 等手动触发不受影响。
+  worker:
     build:
       context: ./backend
-    command: ["python", "scripts/scheduler.py"]
+    command: ["celery", "-A", "app.tasks", "worker", "--loglevel=info", "--concurrency=2"]
     environment:
       <<: *api-environment
     volumes:
@@ -113,6 +117,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "app.tasks", "beat", "--loglevel=info"]
+    environment:
+      <<: *api-environment
+    depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
