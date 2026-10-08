@@ -107,6 +107,15 @@
 
       <div class="detail__actions">
         <van-button round plain type="primary" @click="showShare = true">分享这家店</van-button>
+        <van-button
+          round
+          :plain="!favorited"
+          :type="favorited ? 'danger' : 'primary'"
+          :icon="favorited ? 'like' : 'like-o'"
+          @click="toggleFavorite"
+        >
+          {{ favorited ? '已收藏' : '收藏' }}
+        </van-button>
         <van-button round plain @click="onFeedback">纠错</van-button>
       </div>
 
@@ -177,12 +186,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 
+import { addFavorite, fetchFavoriteStatus, removeFavorite } from '@/api/favorites'
 import { getRestaurant } from '@/api/restaurants'
 import { submitFeedback } from '@/api/feedback'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import KeywordTag from '@/components/KeywordTag.vue'
 import ShareSheet from '@/components/ShareSheet.vue'
+import { useUserStore } from '@/store/user'
 import type { FeedbackType, RestaurantDetail, SourceRef } from '@/types'
 import { amapNavigationUrl } from '@/utils/amap'
 import { formatPrice, formatScore, sourceLabel } from '@/utils/format'
@@ -197,12 +208,16 @@ const FEEDBACK_TYPES: { value: FeedbackType; label: string }[] = [
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const detail = ref<RestaurantDetail | null>(null)
 const state = ref<'loading' | 'ready' | 'error' | 'notfound'>('loading')
 const errorMessage = ref('')
 const showShare = ref(false)
 const shareUrl = computed(() => window.location.href)
+
+// 收藏态（V2.0）：登录后展示真实状态，未登录点击引导去登录
+const favorited = ref(false)
 
 const showFeedback = ref(false)
 const submitting = ref(false)
@@ -217,6 +232,9 @@ async function load() {
   try {
     detail.value = await getRestaurant(String(route.params.id))
     state.value = 'ready'
+    if (userStore.isLoggedIn && detail.value) {
+      favorited.value = (await fetchFavoriteStatus(detail.value.restaurant_id)).favorited
+    }
   } catch (err) {
     if (isNotFound(err)) {
       state.value = 'notfound'
@@ -224,6 +242,36 @@ async function load() {
       state.value = 'error'
       errorMessage.value = err instanceof ApiError ? err.message : '加载失败，请稍后重试'
     }
+  }
+}
+
+async function toggleFavorite() {
+  const target = detail.value
+  if (!target) return
+  if (!userStore.isLoggedIn) {
+    showToast('登录后即可收藏')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+  try {
+    if (favorited.value) {
+      await removeFavorite(target.restaurant_id)
+      favorited.value = false
+      showToast('已取消收藏')
+    } else {
+      await addFavorite(target.restaurant_id)
+      favorited.value = true
+      showToast('已收藏')
+    }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      // 令牌过期：清除本地态并引导重新登录
+      userStore.logout()
+      showToast('登录已过期，请重新登录')
+      router.push({ path: '/login', query: { redirect: route.fullPath } })
+      return
+    }
+    showToast(err instanceof ApiError ? err.message : '操作失败，请稍后重试')
   }
 }
 

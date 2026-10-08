@@ -1,6 +1,7 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
 
 import { API_BASE, REQUEST_TIMEOUT } from '@/config'
+import { getToken } from '@/utils/token'
 
 export class ApiError extends Error {
   status: number
@@ -27,8 +28,12 @@ const http = axios.create({
 
 /** 统一解包 {code,message,data}；失败一律抛 ApiError（含 HTTP 状态） */
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
+  // 用户态接口（收藏等）自动附带 Bearer 令牌；免登录接口无令牌则不带该头
+  const token = getToken()
+  const headers = { ...(config.headers || {}) } as Record<string, string>
+  if (token) headers.Authorization = `Bearer ${token}`
   try {
-    const response = await http.request<ApiEnvelope<T>>(config)
+    const response = await http.request<ApiEnvelope<T>>({ ...config, headers })
     const body = response.data
     if (body && typeof body === 'object' && 'code' in body) {
       if (body.code !== 0) {

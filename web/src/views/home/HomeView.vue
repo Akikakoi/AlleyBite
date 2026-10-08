@@ -1,6 +1,11 @@
 <template>
   <div class="page home">
     <header class="home__hero">
+      <div class="home__topbar">
+        <button class="home__mine" @click="router.push('/mine')">
+          {{ userStore.isLoggedIn ? `我的 · ${userStore.username}` : '我的' }}
+        </button>
+      </div>
       <p class="home__eyebrow">HOLE-IN-THE-WALL</p>
       <h1 class="page-title">钻进巷子，找本地真味</h1>
       <p class="text-sub home__sub">输入城市，看看被反复念叨的小馆子</p>
@@ -68,10 +73,12 @@ import { getCities } from '@/api/cities'
 import { ApiError } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import { useCityStore } from '@/store/city'
+import { useUserStore } from '@/store/user'
 import type { City } from '@/types'
 
 const router = useRouter()
 const store = useCityStore()
+const userStore = useUserStore()
 
 const keyword = ref('')
 const cities = ref<City[]>([])
@@ -99,6 +106,22 @@ onMounted(load)
 <style scoped>
 .home__hero {
   padding: 32px 0 8px;
+}
+
+.home__topbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.home__mine {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-tag);
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  font-size: var(--font-hint);
+  cursor: pointer;
 }
 
 .home__eyebrow {

@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
+import { getToken } from '@/utils/token'
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -31,6 +33,24 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/source-notice/SourceNoticeView.vue'),
     meta: { title: '来源提示' },
   },
+  {
+    path: '/mine',
+    name: 'mine',
+    component: () => import('@/views/mine/MineView.vue'),
+    meta: { title: '我的', requiresAuth: true },
+  },
+  {
+    path: '/mine/favorites',
+    name: 'favorites',
+    component: () => import('@/views/mine/FavoritesView.vue'),
+    meta: { title: '我的收藏', requiresAuth: true },
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/mine/LoginView.vue'),
+    meta: { title: '登录' },
+  },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
@@ -40,6 +60,13 @@ const router = createRouter({
   history: createWebHistory(),
   routes,
   scrollBehavior: () => ({ top: 0 }),
+})
+
+// 用户态路由守卫（V2.0 账号体系）：未登录跳登录页，登录后回跳原页
+router.beforeEach((to) => {
+  if (to.meta.requiresAuth && !getToken()) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
 })
 
 router.afterEach((to) => {
