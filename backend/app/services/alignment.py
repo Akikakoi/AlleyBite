@@ -68,6 +68,9 @@ def _add_alias(
 ) -> bool:
     if not norm or norm == restaurant.name_norm or norm in alias_map:
         return False
+    # 同一店铺已有相同规范化别名时跳过（人工确认同店多条 mention 时会重复触发）
+    if any(a.alias_norm == norm for a in restaurant.aliases):
+        return False
     # 走关系集合追加：既落库（cascade）又保持内存中的 aliases 集合同步
     restaurant.aliases.append(
         ShopAlias(restaurant_id=restaurant.id, alias=raw_name, alias_norm=norm)
@@ -106,10 +109,10 @@ def align_mentions(
     if city_hint:
         stmt = stmt.where(MentionRow.raw_content.has(RawContent.city_hint == city_hint))
 
-    pending_review_ids = set(
-        session.scalars(
-            select(AlignmentReview.mention_id).where(AlignmentReview.status == "pending")
-        ).all()
+    # 一个 mention 只允许一条审核记录（uq_alignment_review_mention）：
+    # pending 已在队列、rejected 人工已否决、confirmed 已归并，均不再重复入队
+    reviewed_mention_ids = set(
+        session.scalars(select(AlignmentReview.mention_id)).all()
     )
 
     result = AlignmentRunResult()
@@ -137,7 +140,7 @@ def align_mentions(
         by_id = {r.id: r for r in restaurants}
 
         for mention in mentions:
-            if mention.id in pending_review_ids:
+            if mention.id in reviewed_mention_ids:
                 result.skipped += 1
                 continue
 
