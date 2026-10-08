@@ -1,10 +1,9 @@
 """榜单生成与读取（文档 6.4 / 7.2 rank_snapshot / 7.3 条目结构）。
 
-- build_rank_snapshot：取城市 active restaurant → 打分 → 硬规则过滤 → Top N → 落 rank_snapshot。
-- get_rank：读该城市**最新**快照，按筛选与分页返回。
-
-说明：文档 6.4 第 6 步的 Redis 刷新暂缺（未接入 Redis），读取直接走库内快照，
-      快照本身已保证前端读取稳定、可分页。
+- build_rank_snapshot：取城市 active restaurant → 打分 → 硬规则过滤 → Top N → 落 rank_snapshot，
+  并失效该城市的榜单缓存（文档 6.4 第 6 步）。
+- get_rank：读该城市**最新**快照，按筛选与分页返回；Redis 可用时走 read-through
+  缓存（RankCache，键含筛选与 days），不可用则直读库内快照。
 """
 
 from collections import Counter
