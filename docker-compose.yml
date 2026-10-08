@@ -38,6 +38,15 @@ x-api-environment: &api-environment
   # 纠错限流与 IP 哈希加盐（文档 9.3）
   FEEDBACK_RATE_LIMIT_MAX: ${FEEDBACK_RATE_LIMIT_MAX:-5}
   FEEDBACK_IP_SALT: ${FEEDBACK_IP_SALT:-alleybite}
+  # C 端账号令牌（文档 10.2 / V2.0）：独立签名密钥，留空回退 FEEDBACK_IP_SALT
+  USER_TOKEN_SECRET: ${USER_TOKEN_SECRET:-}
+  USER_TOKEN_TTL_MINUTES: ${USER_TOKEN_TTL_MINUTES:-10080}
+  # 邮箱验证码发信（V2.0）：SMTP_USER/PASSWORD 配好后自动切真实发信，留空走 mock
+  SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM_NAME: ${SMTP_FROM_NAME:-苍蝇馆子美食发现器}
   # 管理后台（文档 9.5）：独立登录；ADMIN_PASSWORD 留空则不自动建号
   ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
