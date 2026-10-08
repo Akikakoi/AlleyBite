@@ -607,6 +607,15 @@ def test_admin_stats_aggregates(client, session, admin_headers):
     session.add(
         JobRun(job_type="rank", city_id=city.id, status="success", started_at=datetime.now(timezone.utc))
     )
+    session.add(
+        JobRun(
+            job_type="extract",
+            status="success",
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+            stats={"llm_input_tokens": 1200, "llm_output_tokens": 340},
+        )
+    )
     session.add(JobRun(job_type="crawl", status="failed", started_at=datetime.now(timezone.utc)))
     session.commit()
 
@@ -621,13 +630,18 @@ def test_admin_stats_aggregates(client, session, admin_headers):
     assert data["extract"]["failure_rate"] == 0.5
     # 地址完整率：2 条 mention 中 1 条有地址 → 0.5
     assert data["extract"]["address_coverage"] == 0.5
-    # 任务成功率：success 1 / failed 1 → 0.5
-    assert data["jobs_summary"]["success_rate"] == 0.5
+    # 任务成功率：success 2（rank + extract）/ failed 1（crawl）→ 0.6667
+    assert data["jobs_summary"]["success_rate"] == 0.6667
+    assert data["jobs_summary"]["success"] == 2
+    assert data["jobs_summary"]["failed"] == 1
     assert len(data["jobs_14d"]) == 14
     assert len(data["mentions_14d"]) == 14
     assert data["city_restaurants"][0]["city"] == "成都"
     assert data["city_restaurants"][0]["active"] == 1
     assert data["city_restaurants"][0]["total"] == 2
+    # 成本看板：token 用量按天聚合（仅 finished 任务计入）
+    assert len(data["tokens_14d"]) == 14
+    assert data["tokens_total"] == {"input": 1200, "output": 340}
 
 
 def test_admin_stats_empty_db_zero_rates(client, session, admin_headers):

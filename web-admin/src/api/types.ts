@@ -169,6 +169,12 @@ export interface AdminStatsCityRow {
   total: number
 }
 
+export interface AdminStatsTokenPoint {
+  date: string
+  input: number
+  output: number
+}
+
 export interface AdminStats {
   overview: AdminStatsOverview
   raw_status: { status: string; count: number }[]
@@ -177,6 +183,9 @@ export interface AdminStats {
   jobs_14d: AdminStatsDayPoint[]
   mentions_14d: AdminStatsDayPoint[]
   city_restaurants: AdminStatsCityRow[]
+  /** LLM token 用量（按天，来自 job_run.stats；厂商账单级计费属 Backlog） */
+  tokens_14d: AdminStatsTokenPoint[]
+  tokens_total: { input: number; output: number }
   generated_at: string
   window_days: number
 }

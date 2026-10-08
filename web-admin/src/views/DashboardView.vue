@@ -39,6 +39,12 @@
           <div ref="rawChartRef" class="chart"></div>
         </el-card>
       </el-col>
+      <el-col :md="12" :xs="24">
+        <el-card shadow="never" class="chart-card">
+          <template #header>LLM token 用量（近 {{ stats.window_days }} 天，输入 / 输出）</template>
+          <div ref="tokensChartRef" class="chart"></div>
+        </el-card>
+      </el-col>
     </el-row>
 
     <el-card v-if="stats" shadow="never" class="quality-card">
@@ -60,6 +66,12 @@
         </el-descriptions-item>
         <el-descriptions-item label="任务成功 / 失败">
           {{ stats.jobs_summary.success }} / {{ stats.jobs_summary.failed }}
+        </el-descriptions-item>
+        <el-descriptions-item label="LLM token 输入（近窗口）">
+          {{ stats.tokens_total.input.toLocaleString() }}
+        </el-descriptions-item>
+        <el-descriptions-item label="LLM token 输出（近窗口）">
+          {{ stats.tokens_total.output.toLocaleString() }}
         </el-descriptions-item>
         <el-descriptions-item label="快照生成时间">
           {{ formatTime(stats.generated_at) }}
@@ -86,6 +98,7 @@ const jobsChartRef = ref<HTMLElement>()
 const mentionsChartRef = ref<HTMLElement>()
 const cityChartRef = ref<HTMLElement>()
 const rawChartRef = ref<HTMLElement>()
+const tokensChartRef = ref<HTMLElement>()
 let charts: echarts.ECharts[] = []
 
 const overviewCards = computed(() => {
@@ -191,6 +204,21 @@ function renderCharts() {
           label: { formatter: '{b}: {c}' },
           data: stats.value.raw_status.map((r) => ({ name: r.status, value: r.count })),
         },
+      ],
+    })
+    charts.push(chart)
+  }
+  if (tokensChartRef.value) {
+    const chart = echarts.init(tokensChartRef.value)
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['输入', '输出'] },
+      grid: { left: 64, right: 16, top: 32, bottom: 24 },
+      xAxis: { type: 'category', data: stats.value.tokens_14d.map((d) => d.date.slice(5)) },
+      yAxis: { type: 'value' },
+      series: [
+        { name: '输入', type: 'bar', stack: 'tokens', itemStyle: { color: '#409eff' }, data: stats.value.tokens_14d.map((d) => d.input) },
+        { name: '输出', type: 'bar', stack: 'tokens', itemStyle: { color: '#e6a23c' }, data: stats.value.tokens_14d.map((d) => d.output) },
       ],
     })
     charts.push(chart)

@@ -265,6 +265,30 @@ def build_admin_stats(session: Session, *, now: datetime | None = None, days: in
         for name, v in sorted(per_city.items(), key=lambda kv: -kv[1]["active"])
     ]
 
+    # 成本：近 N 天 LLM token 用量按天（来自 job_run.stats 的 llm_input/output_tokens，
+    # 文档 9.5 数据看板 / 10.4 成本告警；厂商账单级计费仍属 Backlog）
+    token_rows = session.execute(
+        select(JobRun.started_at, JobRun.stats).where(
+            JobRun.finished_at.is_not(None), JobRun.started_at >= cutoff
+        )
+    ).all()
+    tokens_by_day = {d: {"input": 0, "output": 0} for d in day_keys}
+    for started_at, stats in token_rows:
+        if started_at is None or not stats:
+            continue
+        key = started_at.date().isoformat()
+        if key not in tokens_by_day:
+            continue
+        tokens_by_day[key]["input"] += int(stats.get("llm_input_tokens") or 0)
+        tokens_by_day[key]["output"] += int(stats.get("llm_output_tokens") or 0)
+    tokens_14d = [
+        {"date": d, "input": v["input"], "output": v["output"]} for d, v in tokens_by_day.items()
+    ]
+    tokens_total = {
+        "input": sum(v["input"] for v in tokens_by_day.values()),
+        "output": sum(v["output"] for v in tokens_by_day.values()),
+    }
+
     return {
         "overview": overview,
         "raw_status": raw_status,
@@ -273,6 +297,8 @@ def build_admin_stats(session: Session, *, now: datetime | None = None, days: in
         "jobs_14d": jobs_14d,
         "mentions_14d": mentions_14d,
         "city_restaurants": city_restaurants,
+        "tokens_14d": tokens_14d,
+        "tokens_total": tokens_total,
         "generated_at": now.isoformat(),
         "window_days": days,
     }
