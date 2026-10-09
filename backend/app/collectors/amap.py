@@ -64,8 +64,11 @@ def parse_poi(raw: dict) -> PoiRecord | None:
         lng_str, _, lat_str = location.partition(",")
         longitude, latitude = _to_float(lng_str), _to_float(lat_str)
     biz_ext = raw.get("biz_ext") or {}
-    # opentime2 含星期描述（「周一至周日 11:00-21:00」）优先；open_time 为纯时段
+    # opentime2 含星期描述（「周一至周日 11:00-21:00」）优先；open_time 为纯时段。
+    # 个别 POI 会附带临时调整时段导致超长，截断到列宽（128）以内
     hours = _to_str(biz_ext.get("opentime2")) or _to_str(biz_ext.get("open_time"))
+    if hours:
+        hours = hours[:120]
     return PoiRecord(
         poi_id=poi_id,
         name=name,
