@@ -15,7 +15,9 @@
         <van-tab title="验证码登录" name="sms" />
       </van-tabs>
 
-      <van-form v-if="active !== 'sms'" class="login__form" @submit.prevent="submit">
+      <!-- van-form 的 submit 事件参数是表单值对象而非 Event，不能加 .prevent
+           （Vant 内部已阻止原生默认提交），否则报 preventDefault is not a function -->
+      <van-form v-if="active !== 'sms'" class="login__form" @submit="submit">
         <van-field
           v-model="form.username"
           name="username"
@@ -45,7 +47,7 @@
         </van-button>
       </van-form>
 
-      <van-form v-else class="login__form" @submit.prevent="submitSms">
+      <van-form v-else class="login__form" @submit="submitSms">
         <van-field
           v-model="smsForm.email"
           name="email"
