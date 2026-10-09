@@ -38,6 +38,9 @@ def _fast_auth(monkeypatch):
     monkeypatch.setattr(app_main.settings, "user_token_secret", "unit-user-secret")
     monkeypatch.setattr(app_main.settings, "user_password_iterations", 1_000)
     monkeypatch.setattr(app_main.settings, "uploads_dir", "./test_uploads")
+    # 邮箱验证码强制走 mock（.env 配了 SMTP_USER 会切真实发信，导致单测依赖环境）
+    monkeypatch.setattr(app_main.settings, "smtp_user", "")
+    monkeypatch.setattr(app_main.settings, "smtp_password", "")
 
 
 @pytest.fixture
