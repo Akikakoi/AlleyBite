@@ -60,6 +60,8 @@ export interface RestaurantDetail {
   exclude_reason: string | null
   /** 「为什么上榜」人话理由（公开报道信号自动生成，被剔除店为空） */
   reasons: string[]
+  /** 大众点评搜索直达链接（城市未收录或店名为空时缺失） */
+  review_url?: string | null
   mention_count: number
   last_mentioned_at: string | null
   praise_keywords: string[]

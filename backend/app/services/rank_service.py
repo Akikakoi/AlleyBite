@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..core.config import Settings, get_settings
 from ..db.models import City, Mention as MentionRow, RankSnapshot, Restaurant
 from .cache import RankCache
+from .external_links import build_dianping_search_url
 from .scoring import apply_bayesian_smooth, to_utc
 from .scoring_service import collect_shop_scores, score_one_restaurant
 
@@ -164,6 +165,10 @@ def build_restaurant_detail(
         "score": display_score,
         "exclude_reason": score.exclude_reason if score else None,
         "reasons": score.reasons if score else [],
+        # 「到店最后一公里」：大众点评搜索直达（外链，站内不聚合其内容）
+        "review_url": build_dianping_search_url(
+            restaurant.city.name if restaurant.city else None, restaurant.name
+        ),
         "mention_count": enriched["mention_count"],
         "last_mentioned_at": enriched["last_mentioned_at"],
         "praise_keywords": enriched["praise_keywords"],

@@ -97,9 +97,25 @@
         </van-button>
       </section>
 
-      <section v-if="detail.sources.length" class="card detail__block">
-        <h2 class="detail__label">谁报道过它</h2>
-        <ul class="detail__sources">
+      <section
+        v-if="detail.sources.length || detail.review_url"
+        class="card detail__block"
+      >
+        <div class="detail__label-row">
+          <h2 class="detail__label">谁报道过它</h2>
+          <van-button
+            v-if="detail.review_url"
+            size="small"
+            round
+            plain
+            type="primary"
+            icon="shop-o"
+            @click="openReviews"
+          >
+            去点评看评价
+          </van-button>
+        </div>
+        <ul v-if="detail.sources.length" class="detail__sources">
           <li
             v-for="(source, index) in detail.sources"
             :key="index"
@@ -461,6 +477,20 @@ function openSource(source: SourceRef) {
   })
 }
 
+/** 大众点评评价直达（方向二）：拼好的搜索链接，经站内第三方提示页跳转 */
+function openReviews() {
+  const target = detail.value
+  if (!target?.review_url) return
+  router.push({
+    path: '/source',
+    query: {
+      url: target.review_url,
+      source: 'dianping',
+      title: target.name,
+    },
+  })
+}
+
 /** 店铺分享图（文档 9.2 保存图片） */
 function shopPoster() {
   if (!detail.value) return Promise.reject(new Error('店铺未加载'))
@@ -562,6 +592,18 @@ onMounted(load)
   font-size: var(--font-body);
   font-weight: 700;
   color: var(--color-secondary);
+}
+
+.detail__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.detail__label-row .detail__label {
+  margin-bottom: 6px;
 }
 
 .detail__tags {
