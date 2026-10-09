@@ -158,8 +158,16 @@ def refresh_poi() -> list[str]:
 
 @app.task(name="tasks.crawl_text")
 def crawl_text() -> str:
-    """文本源增量抓取（seed/rss/html_list），脚本内部限流与熔断。"""
-    return _run_script("run_crawl.py", ["--sources", "seed,rss,html_list"], "文本源增量抓取")
+    """文本源增量抓取（seed/rss/html_list），脚本内部限流与熔断。
+
+    种子源显式指向真实运营种子文件：默认路径 samples/seeds.sample.jsonl
+    是离线演示数据，调度读它会周期性把演示店铺灌回生产库。
+    """
+    return _run_script(
+        "run_crawl.py",
+        ["--sources", "seed,rss,html_list", "--seed-file", "samples/seeds.reports.jsonl"],
+        "文本源增量抓取",
+    )
 
 
 @app.task(name="tasks.run_pipeline")
