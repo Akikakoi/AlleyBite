@@ -184,6 +184,8 @@ class Restaurant(Base):
     merged_into: Mapped[int | None] = mapped_column(ForeignKey("restaurant.id"))
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
+    # 营业时间（高德 POI opentime2/open_time，如「周一至周日 11:00-21:00」）
+    open_hours: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

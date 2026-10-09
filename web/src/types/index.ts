@@ -62,6 +62,10 @@ export interface RestaurantDetail {
   reasons: string[]
   /** 大众点评搜索直达链接（城市未收录或店名为空时缺失） */
   review_url?: string | null
+  /** 营业时间（高德 POI 原文，如「周一至周日 11:00-21:00」）；无数据为 null */
+  open_hours: string | null
+  /** 当前是否在营业时段（北京时间）；无法解析为 null */
+  is_open: boolean | null
   mention_count: number
   last_mentioned_at: string | null
   praise_keywords: string[]

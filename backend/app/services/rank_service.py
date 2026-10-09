@@ -16,6 +16,7 @@ from ..core.config import Settings, get_settings
 from ..db.models import City, Mention as MentionRow, RankSnapshot, Restaurant
 from .cache import RankCache
 from .external_links import build_dianping_search_url
+from .open_hours import is_open_now
 from .scoring import apply_bayesian_smooth, to_utc
 from .scoring_service import collect_shop_scores, score_one_restaurant
 
@@ -169,6 +170,9 @@ def build_restaurant_detail(
         "review_url": build_dianping_search_url(
             restaurant.city.name if restaurant.city else None, restaurant.name
         ),
+        "open_hours": restaurant.open_hours,
+        # None = 无法解析（前端只展示原文，不猜营业状态）
+        "is_open": is_open_now(restaurant.open_hours, now=now),
         "mention_count": enriched["mention_count"],
         "last_mentioned_at": enriched["last_mentioned_at"],
         "praise_keywords": enriched["praise_keywords"],

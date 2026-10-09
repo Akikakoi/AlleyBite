@@ -31,6 +31,7 @@ class PoiRecord:
     latitude: float | None = None
     longitude: float | None = None
     typecode: str | None = None
+    open_hours: str | None = None
 
 
 def _to_float(value: str | None) -> float | None:
@@ -38,6 +39,17 @@ def _to_float(value: str | None) -> float | None:
         return float(value) if value else None
     except (TypeError, ValueError):
         return None
+
+
+def _to_str(value: object) -> str | None:
+    """biz_ext 字段兼容：字符串直接用；高德个别字段偶发 {'value': ...} 包装。"""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        inner = value.get("value")
+        if isinstance(inner, str) and inner.strip():
+            return inner.strip()
+    return None
 
 
 def parse_poi(raw: dict) -> PoiRecord | None:
@@ -51,6 +63,9 @@ def parse_poi(raw: dict) -> PoiRecord | None:
     if "," in location:
         lng_str, _, lat_str = location.partition(",")
         longitude, latitude = _to_float(lng_str), _to_float(lat_str)
+    biz_ext = raw.get("biz_ext") or {}
+    # opentime2 含星期描述（「周一至周日 11:00-21:00」）优先；open_time 为纯时段
+    hours = _to_str(biz_ext.get("opentime2")) or _to_str(biz_ext.get("open_time"))
     return PoiRecord(
         poi_id=poi_id,
         name=name,
@@ -59,6 +74,7 @@ def parse_poi(raw: dict) -> PoiRecord | None:
         latitude=latitude,
         longitude=longitude,
         typecode=(raw.get("typecode") or None),
+        open_hours=hours,
     )
 
 
@@ -115,7 +131,8 @@ class AmapPoiCollector(BaseCollector):
                     "citylimit": "true",
                     "offset": page_size,
                     "page": page,
-                    "extensions": "base",
+                    # all：附带 biz_ext（营业时间 opentime2/open_time 等）
+                    "extensions": "all",
                 }
                 url = f"{self.settings.amap_base_url}?{urlencode(params)}"
                 result = self.fetch_url(url, ext="json", respect_robots=False)
@@ -205,6 +222,9 @@ def upsert_pois(
             restaurant.latitude = record.latitude
         if restaurant.longitude is None:
             restaurant.longitude = record.longitude
+        # 营业时间属易变信息：以高德最新值为准，非空即覆盖
+        if record.open_hours:
+            restaurant.open_hours = record.open_hours
 
         if norm and norm != restaurant.name_norm:
             exists = session.scalar(

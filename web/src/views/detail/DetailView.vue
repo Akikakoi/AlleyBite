@@ -85,6 +85,18 @@
       <section class="card detail__block">
         <h2 class="detail__label">地址</h2>
         <p class="detail__address">{{ detail.address || '地址待补充' }}</p>
+        <p v-if="detail.open_hours" class="detail__hours">
+          <span
+            class="detail__hours-status"
+            :class="{
+              'is-open': detail.is_open === true,
+              'is-closed': detail.is_open === false,
+            }"
+          >
+            {{ detail.is_open === true ? '营业中' : detail.is_open === false ? '未在营业时段' : '时段待确认' }}
+          </span>
+          {{ detail.open_hours }}
+        </p>
         <van-button
           v-if="detail.address"
           size="small"
@@ -643,6 +655,34 @@ onMounted(load)
 
 .detail__address {
   margin: 0 0 12px;
+}
+
+.detail__hours {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.detail__hours-status {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-caption, 12px);
+  font-weight: 600;
+  background: var(--color-border);
+  color: var(--color-secondary);
+  flex-shrink: 0;
+}
+
+.detail__hours-status.is-open {
+  background: rgba(48, 178, 96, 0.14);
+  color: #1c8a48;
+}
+
+.detail__hours-status.is-closed {
+  background: rgba(224, 82, 82, 0.12);
+  color: #c2413d;
 }
 
 .detail__sources {

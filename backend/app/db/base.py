@@ -30,6 +30,9 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "app_user": {
         "email": "VARCHAR(255)",
     },
+    "restaurant": {
+        "open_hours": "VARCHAR(128)",
+    },
 }
 
 
