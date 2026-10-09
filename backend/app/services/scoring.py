@@ -4,7 +4,7 @@
 不直接访问数据库（ORM 聚合见 scoring_service.py），便于单测与后续替换数据源。
 
 公式（6.2）：
-    score = 10 × ( Σ wᵢ·fᵢ − Σ penaltyⱼ ) × time_decay × confidence_factor
+    score = 5 × ( Σ wᵢ·fᵢ − Σ penaltyⱼ ) × time_decay × confidence_factor
 
 说明：
 - fᵢ / penaltyⱼ 均归一化到 [0,1]，权重见 FEATURE_WEIGHTS。
@@ -148,12 +148,13 @@ class ShopScore(BaseModel):
     city_hint: str | None = None
     restaurant_id: int | None = None   # 实体对齐后回填，供榜单快照引用
     mention_count: int = 0
-    score: float = 0.0               # 最终分（0–100）
+    score: float = 0.0               # 最终分（0–5，5 分制）
     base_score: float = 0.0          # Σ wᵢfᵢ − Σ penaltyⱼ
     time_decay: float = 1.0
     confidence_factor: float = 0.0
     features: list[FeatureScore] = Field(default_factory=list)
     penalties: list[PenaltyScore] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)   # 「为什么上榜」人话理由
     excluded: bool = False
     exclude_reason: str | None = None
     penalty_multiplier: float = 1.0
@@ -296,6 +297,56 @@ def compute_confidence_factor(mention_count: int, target: int) -> float:
     return round(_saturate(mention_count, target), 4)
 
 
+def build_rank_reasons(signals: ShopSignals, *, now: datetime) -> list[str]:
+    """把聚合信号翻译成「为什么上榜」的人话理由（详情页证据链，方向一）。
+
+    只描述已观测到的信号，不做主观修饰；降权/风险类提示照实说明。
+    """
+    reasons: list[str] = []
+
+    if signals.independent_source_count >= 2:
+        reasons.append(f"{signals.independent_source_count} 家独立来源分别提及")
+    elif signals.mention_count > 0:
+        reasons.append(f"{signals.mention_count} 条公开提及记录")
+
+    if signals.positive_count > 0:
+        reasons.append(f"正面口碑提及 {signals.positive_count} 次")
+
+    if (
+        signals.local_known_count > 0
+        and signals.local_count / signals.local_known_count >= 0.5
+    ):
+        reasons.append(
+            f"本地人认可（{signals.local_count}/{signals.local_known_count} 条提及来自本地作者）"
+        )
+
+    if signals.avg_price is not None and signals.avg_price > 0:
+        reasons.append(f"人均约 ¥{int(signals.avg_price)}")
+
+    if signals.earliest_at is not None:
+        days = max(0, (now - to_utc(signals.earliest_at)).days)
+        if days >= 365:
+            reasons.append(f"可追溯报道约 {round(days / 365)} 年")
+        elif days >= 90:
+            reasons.append(f"可追溯报道约 {round(days / 30)} 个月")
+
+    if signals.uniqueness_hits > 0:
+        reasons.append("有「本地人私藏 / 巷子小店」类独特语境")
+
+    if signals.paradox_good_count > 0:
+        reasons.append("存在「环境一般但味道惊艳」型好评")
+
+    # 风险/降权类提示照实披露
+    if signals.burst:
+        reasons.append("近 7 天疑似集中刷评，已降权")
+    if signals.influencer_hits > 0:
+        reasons.append("含网红探店话术，已降权")
+    if signals.hygiene_count > 0:
+        reasons.append("有卫生相关负面提及，请注意")
+
+    return reasons[:8]
+
+
 def score_shop(
     signals: ShopSignals,
     *,
@@ -320,10 +371,10 @@ def score_shop(
     if rules.excluded:
         score = 0.0
     else:
-        # 未平滑质量分（10 分制）：置信处理改由聚合层贝叶斯平均承担（见
+        # 未平滑质量分（5 分制）：置信处理改由聚合层贝叶斯平均承担（见
         # apply_bayesian_smooth），单店分数不再被 mention 数线性压低
-        score = 10 * max(0.0, base_score) * decay * rules.multiplier
-        score = round(_clamp01(score / 10) * 10, 1)
+        score = 5 * max(0.0, base_score) * decay * rules.multiplier
+        score = round(_clamp01(score / 5) * 5, 1)
 
     return ShopScore(
         shop_key=signals.shop_key,
@@ -336,6 +387,7 @@ def score_shop(
         confidence_factor=confidence,
         features=features,
         penalties=penalties,
+        reasons=[] if rules.excluded else build_rank_reasons(signals, now=now),
         excluded=rules.excluded,
         exclude_reason=rules.reason,
         penalty_multiplier=rules.multiplier,
@@ -450,5 +502,5 @@ def apply_bayesian_smooth(
     for s in valid:
         n = s.mention_count
         smoothed = (prior_strength * prior + n * s.score) / (prior_strength + n)
-        s.score = round(max(0.0, min(10.0, smoothed)), 1)
+        s.score = round(max(0.0, min(5.0, smoothed)), 1)
     return scores

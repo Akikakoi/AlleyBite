@@ -18,7 +18,7 @@ from .cache import RankCache
 from .scoring import apply_bayesian_smooth, to_utc
 from .scoring_service import collect_shop_scores, score_one_restaurant
 
-ALGORITHM_VER = "score-v1"
+ALGORITHM_VER = "score-v2"
 DEFAULT_TOP_N = 50
 _MAX_KEYWORDS = 5
 _MAX_DISHES = 5
@@ -163,6 +163,7 @@ def build_restaurant_detail(
         "status": restaurant.status,
         "score": display_score,
         "exclude_reason": score.exclude_reason if score else None,
+        "reasons": score.reasons if score else [],
         "mention_count": enriched["mention_count"],
         "last_mentioned_at": enriched["last_mentioned_at"],
         "praise_keywords": enriched["praise_keywords"],
@@ -207,13 +208,13 @@ def build_rank_snapshot(
     items = []
     for i, s in enumerate(ranked, start=1):
         item = _build_item(session, s, rank=i)
-        # 城市内分位显示分（1.0–9.9）：跨城观感公平，Top1≈9.9、末位 1.0；
+        # 城市内分位显示分（1.0–4.9，5 分制）：跨城观感公平，Top1≈4.9、末位 1.0；
         # score 字段保留贝叶斯绝对分（排序与数据用途）
         if total > 1:
             pct = (total - i) / (total - 1)
         else:
             pct = 1.0
-        item["display_score"] = round(1 + 8.9 * pct, 1)
+        item["display_score"] = round(1 + 3.9 * pct, 1)
         items.append(item)
 
     snapshot = RankSnapshot(

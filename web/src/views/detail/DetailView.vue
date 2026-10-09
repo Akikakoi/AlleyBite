@@ -65,6 +65,23 @@
         </div>
       </section>
 
+      <section v-if="detail.reasons.length" class="card detail__block">
+        <h2 class="detail__label">为什么上榜</h2>
+        <ul class="detail__reasons">
+          <li
+            v-for="(reason, index) in detail.reasons"
+            :key="index"
+            class="detail__reason"
+          >
+            <van-icon name="passed" class="detail__reason-icon" />
+            <span>{{ reason }}</span>
+          </li>
+        </ul>
+        <p class="text-sub detail__reasons-note">
+          依据公开报道信号自动生成，仅供参考
+        </p>
+      </section>
+
       <section class="card detail__block">
         <h2 class="detail__label">地址</h2>
         <p class="detail__address">{{ detail.address || '地址待补充' }}</p>
@@ -81,7 +98,7 @@
       </section>
 
       <section v-if="detail.sources.length" class="card detail__block">
-        <h2 class="detail__label">来源引用</h2>
+        <h2 class="detail__label">谁报道过它</h2>
         <ul class="detail__sources">
           <li
             v-for="(source, index) in detail.sources"
@@ -92,6 +109,9 @@
             <p class="detail__source-head">
               {{ sourceLabel(source.source) }}
               <template v-if="source.title">· {{ source.title }}</template>
+              <span v-if="source.published_at" class="text-sub detail__source-date">
+                {{ formatDate(source.published_at) }}
+              </span>
             </p>
             <p v-if="source.excerpt" class="text-sub detail__source-excerpt">
               {{ source.excerpt }}
@@ -548,6 +568,35 @@ onMounted(load)
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.detail__reasons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.detail__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  line-height: 1.5;
+}
+
+.detail__reason-icon {
+  margin-top: 3px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.detail__reasons-note {
+  margin: 8px 0 0;
+}
+
+.detail__source-date {
+  margin-left: 6px;
+  font-weight: 400;
 }
 
 .detail__address {

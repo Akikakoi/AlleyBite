@@ -14,6 +14,7 @@ from app.services.extract_pipeline import extract_raw_content
 from app.services.ingest import compute_content_hash, ingest_raw_content
 from app.services.scoring import (
     apply_bayesian_smooth,
+    build_rank_reasons,
     FEATURE_WEIGHTS,
     MentionFact,
     ShopSignals,
@@ -95,7 +96,7 @@ def test_score_shop_full_formula():
     assert result.base_score == 0.765
     assert result.time_decay == 1.0
     assert result.confidence_factor == 1.0
-    assert result.score == 7.7  # 10 分制，一位小数
+    assert result.score == 3.8  # 5 分制，一位小数
     assert result.excluded is False
 
 
@@ -107,7 +108,7 @@ def test_score_shop_single_mention_smoothed_by_bayesian():
     )
     result = score_shop(signals, settings=make_settings(), now=NOW)
     assert result.confidence_factor == 0.3333  # 仍作为信息展示
-    assert result.score == 4.4  # 质量分如实（10 分制一位小数）
+    assert result.score == 2.2  # 质量分如实（5 分制一位小数）
 
     # 聚合层：单条店在城市批内被贝叶斯平滑收敛到先验附近
     good = ShopSignals(
@@ -122,8 +123,42 @@ def test_score_shop_single_mention_smoothed_by_bayesian():
     apply_bayesian_smooth(scores, prior_strength=2.0)
     single, solid = scores
     assert solid.score > single.score  # 好店仍显著高于单条店
-    assert single.score > 4.4  # 但被先验抬升而非粗暴压低
-    assert all(0.0 <= s.score <= 10.0 for s in scores)
+    assert single.score > 2.2  # 但被先验抬升而非粗暴压低
+    assert all(0.0 <= s.score <= 5.0 for s in scores)
+
+
+# --- 上榜理由（方向一：可溯源证据链） ---------------------------------------
+
+def test_build_rank_reasons_covers_signals_and_risks():
+    signals = ShopSignals(
+        shop_key="x", display_name="x", mention_count=6, independent_source_count=3,
+        positive_count=5, local_known_count=4, local_count=3,
+        avg_price=45.0, earliest_at=NOW - timedelta(days=800), latest_at=NOW,
+        uniqueness_hits=2, paradox_good_count=1, influencer_hits=1,
+    )
+    reasons = build_rank_reasons(signals, now=NOW)
+    joined = "；".join(reasons)
+    assert "3 家独立来源" in joined
+    assert "正面口碑提及 5 次" in joined
+    assert "本地人认可（3/4" in joined
+    assert "人均约 ¥45" in joined
+    assert "约 2 年" in joined
+    assert "独特语境" in joined
+    assert "味道惊艳" in joined
+    assert "网红探店话术，已降权" in joined
+    assert len(reasons) <= 8
+
+
+def test_build_rank_reasons_minimal_and_empty():
+    # 仅一条提及：中性表述
+    minimal = build_rank_reasons(
+        ShopSignals(shop_key="x", display_name="x", mention_count=1,
+                    independent_source_count=1, positive_count=1),
+        now=NOW,
+    )
+    assert minimal[0] == "1 条公开提及记录"
+    # 零信号：不生成任何理由
+    assert build_rank_reasons(ShopSignals(shop_key="y", display_name="y"), now=NOW) == []
 
 
 # --- 硬规则（6.3） ----------------------------------------------------------
