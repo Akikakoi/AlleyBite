@@ -46,7 +46,25 @@
     </section>
 
     <section class="home__section">
-      <h2 class="home__label">热门城市</h2>
+      <div class="home__label-row">
+        <h2 class="home__label">热门城市</h2>
+        <div class="home__sort" role="group" aria-label="城市排序方式">
+          <button
+            type="button"
+            :class="{ 'is-on': sortBy === 'hot' }"
+            @click="sortBy = 'hot'"
+          >
+            热度
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-on': sortBy === 'pinyin' }"
+            @click="sortBy = 'pinyin'"
+          >
+            拼音
+          </button>
+        </div>
+      </div>
       <EmptyState
         v-if="error"
         title="城市列表加载失败"
@@ -58,14 +76,18 @@
       </EmptyState>
       <div v-else class="city-grid">
         <button
-          v-for="city in cities"
+          v-for="city in sortedCities"
           :key="city.name"
           class="city-chip card"
           @click="go(city.name)"
         >
           <span class="city-chip__name">{{ city.name }}</span>
           <span class="city-chip__status text-sub">
-            {{ city.has_rank ? '有榜单' : '正在收录' }}
+            {{
+              city.has_rank
+                ? `榜单 ${city.rank_count ?? 0} 家`
+                : '正在收录'
+            }}
           </span>
         </button>
       </div>
@@ -88,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { getCities } from '@/api/cities'
@@ -107,6 +129,23 @@ const keyword = ref('')
 const cities = ref<City[]>([])
 const error = ref('')
 const recommend = reactive<RecommendData>({ strategy: 'hot', items: [] })
+
+/** 城市排序：hot = 榜单城市优先 → 最新榜单条数降序 → 拼音；pinyin = 纯拼音序 */
+const sortBy = ref<'hot' | 'pinyin'>('hot')
+const zhCollator = new Intl.Collator('zh-Hans-CN')
+const sortedCities = computed(() => {
+  const list = [...cities.value]
+  if (sortBy.value === 'pinyin') {
+    return list.sort((a, b) => zhCollator.compare(a.name, b.name))
+  }
+  return list.sort(
+    (a, b) =>
+      Number(b.has_rank) - Number(a.has_rank) ||
+      (b.rank_count ?? 0) - (a.rank_count ?? 0) ||
+      (b.restaurant_count ?? 0) - (a.restaurant_count ?? 0) ||
+      zhCollator.compare(a.name, b.name),
+  )
+})
 
 async function loadRecommend() {
   try {
@@ -185,6 +224,38 @@ onMounted(() => {
 
 .home__section {
   margin-top: 28px;
+}
+
+.home__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.home__label-row .home__label {
+  margin-bottom: 0;
+}
+
+.home__sort {
+  display: flex;
+  gap: 8px;
+}
+
+.home__sort button {
+  padding: 4px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-tag);
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  font-size: var(--font-hint);
+  cursor: pointer;
+}
+
+.home__sort button.is-on {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .home__label-sub {

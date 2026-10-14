@@ -5,6 +5,10 @@ export interface City {
   code: string | null
   status: string
   has_rank: boolean
+  /** 收录店铺数（库内总数，含未上榜）；早期版本可能缺失 */
+  restaurant_count?: number
+  /** 最新榜单条数（与榜单页所见一致）；早期版本可能缺失 */
+  rank_count?: number
 }
 
 export interface SourceRef {
