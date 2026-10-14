@@ -94,6 +94,8 @@ class MentionFact:
     praise_keywords: tuple[str, ...] = ()
     complaints: tuple[str, ...] = ()
     evidence_span: str | None = None
+    # at 是否来自发布时间（方向四：老店年限只认发布时间支撑的证据）
+    at_is_published: bool = False
 
     @property
     def text_blob(self) -> str:
@@ -125,6 +127,11 @@ class ShopSignals:
     burst: bool = False
     map_category: str | None = None
     address: str | None = None
+    # 方向四：最早**可靠**证据时间（仅 published_at 支撑的提及参与计算）；
+    # 仅 crawled_at 支撑时为 None——年限展示与老店加成一律不用采集时间冒充。
+    first_confident_at: datetime | None = None
+    # 存活状态（active/suspect/closed/relocated），由聚合层从 restaurant 透传
+    liveness: str = "active"
     facts: list[MentionFact] = field(default_factory=list)
 
 
@@ -158,6 +165,9 @@ class ShopScore(BaseModel):
     excluded: bool = False
     exclude_reason: str | None = None
     penalty_multiplier: float = 1.0
+    # 方向四：老店加成（仅可靠证据；在贝叶斯平均后由 apply_liveness_and_tenure 落到 score）
+    tenure_bonus: float = 0.0
+    liveness: str = "active"
     rank: int | None = None
 
 
@@ -297,6 +307,27 @@ def compute_confidence_factor(mention_count: int, target: int) -> float:
     return round(_saturate(mention_count, target), 4)
 
 
+def compute_tenure_bonus(
+    first_confident_at: datetime | None, now: datetime, settings: Settings
+) -> float:
+    """老店加成（方向四 2.2）：仅由可靠证据（published_at）时间决定。
+
+    - ≥10 年 → score_tenure_bonus_decade（+0.15）
+    - ≥5 年  → score_tenure_bonus_half_decade（+0.08）
+    - 其余 / 无可靠证据 → 0（不加也不减，绝不用采集时间冒充经营年限）
+
+    「十年老店」在生产库仅占 1.3%，要拿这个加成必须有真实历史报道，天然抗刷分。
+    """
+    if first_confident_at is None:
+        return 0.0
+    days = max(0, (now - to_utc(first_confident_at)).days)
+    if days >= 3650:
+        return settings.score_tenure_bonus_decade
+    if days >= 1825:
+        return settings.score_tenure_bonus_half_decade
+    return 0.0
+
+
 def build_rank_reasons(signals: ShopSignals, *, now: datetime) -> list[str]:
     """把聚合信号翻译成「为什么上榜」的人话理由（详情页证据链，方向一）。
 
@@ -323,8 +354,9 @@ def build_rank_reasons(signals: ShopSignals, *, now: datetime) -> list[str]:
     if signals.avg_price is not None and signals.avg_price > 0:
         reasons.append(f"人均约 ¥{int(signals.avg_price)}")
 
-    if signals.earliest_at is not None:
-        days = max(0, (now - to_utc(signals.earliest_at)).days)
+    # 年限口径（方向四 2.2）：只用可靠证据时间；仅 crawled_at 支撑时不提年限
+    if signals.first_confident_at is not None:
+        days = max(0, (now - to_utc(signals.first_confident_at)).days)
         if days >= 365:
             reasons.append(f"可追溯报道约 {round(days / 365)} 年")
         elif days >= 90:
@@ -343,6 +375,8 @@ def build_rank_reasons(signals: ShopSignals, *, now: datetime) -> list[str]:
         reasons.append("含网红探店话术，已降权")
     if signals.hygiene_count > 0:
         reasons.append("有卫生相关负面提及，请注意")
+    if signals.liveness == "suspect":
+        reasons.append("近期未在高德地图查到该店，请以到店实际情况为准")
 
     return reasons[:8]
 
@@ -387,6 +421,12 @@ def score_shop(
         confidence_factor=confidence,
         features=features,
         penalties=penalties,
+        # 老店加成先记账不落分：贝叶斯平均会按 mention 数稀释加成，
+        # 加成是可证事实不应被稀释，由 apply_liveness_and_tenure 在平均后落地
+        tenure_bonus=0.0 if rules.excluded else compute_tenure_bonus(
+            signals.first_confident_at, now, settings
+        ),
+        liveness=signals.liveness,
         reasons=[] if rules.excluded else build_rank_reasons(signals, now=now),
         excluded=rules.excluded,
         exclude_reason=rules.reason,
@@ -410,6 +450,7 @@ def aggregate_shop(
     display_name: str | None = None,
     city_hint: str | None = None,
     address: str | None = None,
+    liveness: str = "active",
 ) -> ShopSignals:
     """把同一店铺的 mention 事实聚合为信号。
 
@@ -478,6 +519,12 @@ def aggregate_shop(
         burst=_has_burst(facts, settings),
         map_category=map_category,
         address=address,
+        # 最早可靠证据：只认发布时间支撑的提及（方向四 2.2）
+        first_confident_at=min(
+            (f.at for f in facts if f.at_is_published and f.at is not None),
+            default=None,
+        ),
+        liveness=liveness,
         facts=list(facts),
     )
 
@@ -503,4 +550,27 @@ def apply_bayesian_smooth(
         n = s.mention_count
         smoothed = (prior_strength * prior + n * s.score) / (prior_strength + n)
         s.score = round(max(0.0, min(5.0, smoothed)), 1)
+    return scores
+
+
+def apply_liveness_and_tenure(
+    scores: list[ShopScore], *, settings: Settings
+) -> list[ShopScore]:
+    """方向四第 3 批：贝叶斯平均之后的最终调整层（就地更新并返回）。
+
+    必须排在 apply_bayesian_smooth 之后执行：
+    - 老店加成是可证事实，不应随 mention 数被先验稀释；
+    - suspect 降权是市场风险信号，同理不应被平均掉。
+    closed 店在聚合入口（collect_shop_scores）已被剔除，不会出现在这里。
+    """
+    for s in scores:
+        if s.excluded:
+            continue
+        # 先加成后降权：liveness 表达"这家店现在还靠不靠谱"，作用于最终证据分
+        if s.tenure_bonus > 0:
+            s.score = round(max(0.0, min(5.0, s.score + s.tenure_bonus)), 1)
+        if s.liveness == "suspect":
+            s.score = round(
+                max(0.0, min(5.0, s.score * settings.score_suspect_multiplier)), 1
+            )
     return scores

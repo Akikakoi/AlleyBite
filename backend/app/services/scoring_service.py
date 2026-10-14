@@ -37,6 +37,8 @@ def _fact_from_row(row: MentionRow) -> MentionFact:
         city_hint=content.city_hint if content else None,
         author_city=row.author_city,
         at=to_utc(at),
+        # 方向四：老店年限只认发布时间支撑的证据
+        at_is_published=content.published_at is not None if content else False,
         low_trust=bool(content.low_trust) if content else False,
         shop_name_raw=row.shop_name_raw,
         sentiment=row.sentiment or "neutral",
@@ -82,6 +84,9 @@ def collect_shop_scores(
         if row.restaurant is not None:
             if row.restaurant.status != "active":  # 已合并/屏蔽的店不计入（文档 6.4 第 1 步）
                 continue
+            # 方向四第 3 批：liveness=closed 的店不进榜（榜单构建时过滤，不靠分数压到 0）
+            if row.restaurant.liveness == "closed":
+                continue
             aligned.setdefault(row.restaurant_id, []).append(fact)
             aligned_restaurants[row.restaurant_id] = row.restaurant
             # restaurant.address 多为空，地址实际落在 mention 上；取其作商场店判定依据
@@ -103,6 +108,7 @@ def collect_shop_scores(
             display_name=restaurant.name,
             city_hint=restaurant.city.name if restaurant.city else None,
             address=restaurant.address or aligned_address.get(restaurant_id) or None,
+            liveness=restaurant.liveness or "active",
         )
         result = score_shop(signals, settings=settings, now=now)
         result.restaurant_id = restaurant_id
@@ -160,6 +166,7 @@ def score_one_restaurant(
         display_name=restaurant.name,
         city_hint=restaurant.city.name if restaurant.city else None,
         address=address,
+        liveness=restaurant.liveness or "active",
     )
     result = score_shop(signals, settings=settings, now=now)
     result.restaurant_id = restaurant_id

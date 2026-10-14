@@ -17,10 +17,11 @@ from ..db.models import City, Mention as MentionRow, RankSnapshot, Restaurant
 from .cache import RankCache
 from .external_links import build_dianping_search_url
 from .open_hours import is_open_now
-from .scoring import apply_bayesian_smooth, to_utc
+from .scoring import apply_bayesian_smooth, apply_liveness_and_tenure, to_utc
 from .scoring_service import collect_shop_scores, score_one_restaurant
 
-ALGORITHM_VER = "score-v2"
+# score-v3：方向四第 3 批——贝叶斯后接存活降权与老店加成，closed 店不进榜
+ALGORITHM_VER = "score-v3"
 DEFAULT_TOP_N = 50
 _MAX_KEYWORDS = 5
 _MAX_DISHES = 5
@@ -120,6 +121,8 @@ def _build_item(session: Session, score, rank: int) -> dict:
         "recommended_dishes": enriched["recommended_dishes"],
         "mention_count": score.mention_count,
         "last_mentioned_at": enriched["last_mentioned_at"],
+        # 方向四：存活状态随快照固化，前端 suspect 角标直接读条目（第 4 批消费）
+        "liveness": score.liveness,
         "sources": enriched["sources"],
     }
 
@@ -175,6 +178,20 @@ def build_restaurant_detail(
         "is_open": is_open_now(restaurant.open_hours, now=now),
         "mention_count": enriched["mention_count"],
         "last_mentioned_at": enriched["last_mentioned_at"],
+        # 方向四：老店档案与存活状态（first_evidence_confident=False 时不展示年限）
+        "first_mentioned_at": (
+            restaurant.first_mentioned_at.date().isoformat()
+            if restaurant.first_mentioned_at
+            else None
+        ),
+        "first_evidence_confident": bool(
+            restaurant.first_evidence_confident
+        )
+        and restaurant.first_mentioned_at is not None,
+        "liveness": restaurant.liveness,
+        "closed_at": (
+            restaurant.closed_at.date().isoformat() if restaurant.closed_at else None
+        ),
         "praise_keywords": enriched["praise_keywords"],
         "complaints": enriched["complaints"],
         "recommended_dishes": enriched["recommended_dishes"],
@@ -211,6 +228,8 @@ def build_rank_snapshot(
     scores = collect_shop_scores(session, city_hint=city_hint, settings=settings, now=now)
     # 贝叶斯平均（文档 6.2 演进）：小样本店收敛到城市先验，替代线性置信压分
     apply_bayesian_smooth(scores, settings.score_bayes_prior)
+    # 方向四第 3 批：平均之后接存活降权与老店加成（不被先验稀释）
+    apply_liveness_and_tenure(scores, settings=settings)
     ranked = [s for s in scores if s.restaurant_id is not None and not s.excluded][:top_n]
 
     total = len(ranked)

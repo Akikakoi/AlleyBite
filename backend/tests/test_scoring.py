@@ -134,6 +134,8 @@ def test_build_rank_reasons_covers_signals_and_risks():
         shop_key="x", display_name="x", mention_count=6, independent_source_count=3,
         positive_count=5, local_known_count=4, local_count=3,
         avg_price=45.0, earliest_at=NOW - timedelta(days=800), latest_at=NOW,
+        # 年限口径（方向四 2.2）：只认可靠证据时间
+        first_confident_at=NOW - timedelta(days=800),
         uniqueness_hits=2, paradox_good_count=1, influencer_hits=1,
     )
     reasons = build_rank_reasons(signals, now=NOW)
@@ -159,6 +161,20 @@ def test_build_rank_reasons_minimal_and_empty():
     assert minimal[0] == "1 条公开提及记录"
     # 零信号：不生成任何理由
     assert build_rank_reasons(ShopSignals(shop_key="y", display_name="y"), now=NOW) == []
+
+
+def test_build_rank_reasons_crawl_only_has_no_tenure():
+    """方向四 2.2：仅 crawled_at 支撑（无发布时间）时绝不提年限，
+    防止把「我们什么时候采到的」说成「店开了多久」。"""
+    signals = ShopSignals(
+        shop_key="x", display_name="x", mention_count=2,
+        independent_source_count=1,
+        earliest_at=NOW - timedelta(days=800), latest_at=NOW,
+        # first_confident_at 缺省 None = 证据全部来自采集时间
+    )
+    joined = "；".join(build_rank_reasons(signals, now=NOW))
+    assert "年" not in joined
+    assert "个月" not in joined
 
 
 # --- 硬规则（6.3） ----------------------------------------------------------
