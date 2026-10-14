@@ -32,6 +32,14 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     },
     "restaurant": {
         "open_hours": "VARCHAR(128)",
+        # 方向四：老店档案 + 存活监测（2026-10-14 设计方案，第 1/2 批）
+        "first_mentioned_at": "TIMESTAMP",
+        "first_evidence_confident": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "last_mentioned_at": "TIMESTAMP",
+        "last_seen_at": "TIMESTAMP",
+        "miss_count": "INTEGER NOT NULL DEFAULT 0",
+        "liveness": "VARCHAR(16) NOT NULL DEFAULT 'active'",
+        "closed_at": "TIMESTAMP",
     },
 }
 

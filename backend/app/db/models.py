@@ -186,6 +186,21 @@ class Restaurant(Base):
     longitude: Mapped[float | None] = mapped_column(Float)
     # 营业时间（高德 POI opentime2/open_time，如「周一至周日 11:00-21:00」）
     open_hours: Mapped[str | None] = mapped_column(String(128))
+    # ---- 方向四：老店档案（设计方案 2026-10-14，第 1 批）----
+    # 最早可考证据时间 = mention 关联 raw_content 的 MIN(published_at)；
+    # 仅 crawled_at 支撑时同样落库，但 first_evidence_confident=False：
+    # 既不对外展示年限，也不参与打分（防把采集时间当经营年限误导用户）。
+    first_mentioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_evidence_confident: Mapped[bool] = mapped_column(default=False)
+    # 最近一次提及时间：时效衰减 / days 时间筛选可直接走本列
+    last_mentioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ---- 方向四：存活监测（第 2 批起写入）----
+    # 最近一次在 POI 刷新中命中；连续未命中计数达到阈值后由状态机推进 liveness（第 3 批）。
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    miss_count: Mapped[int] = mapped_column(default=0)
+    # active | suspect | closed | relocated（与 status 正交：市场事实 vs 运营处置）
+    liveness: Mapped[str] = mapped_column(String(16), default="active")
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
