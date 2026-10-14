@@ -38,7 +38,11 @@
     </EmptyState>
 
     <template v-else>
-      <div v-if="items.length" class="list-grid">
+      <div
+        v-if="items.length"
+        class="list-grid"
+        :style="{ opacity: loading ? 0.55 : 1 }"
+      >
         <ShopCard
           v-for="item in items"
           :key="item.restaurant_id"
@@ -47,16 +51,35 @@
         />
       </div>
       <EmptyState
-        v-else-if="finished"
+        v-else-if="!loading"
         title="没有符合筛选的店铺"
         desc="试试放宽菜系、人均或区域条件"
       />
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        :finished-text="items.length ? '没有更多了' : ''"
-        @load="onLoad"
-      />
+      <!-- 自绘分页条：首页/末页页码常驻，中间以省略号截断 -->
+      <nav v-if="totalPages > 1" class="pager" aria-label="榜单分页">
+        <button
+          type="button"
+          class="pager__item pager__nav"
+          :disabled="currentPage === 1"
+          @click="goPage(currentPage - 1)"
+        >‹</button>
+        <template v-for="(p, i) in pageItems" :key="`${p}-${i}`">
+          <span v-if="p === '…'" class="pager__item pager__gap">…</span>
+          <button
+            v-else
+            type="button"
+            class="pager__item"
+            :class="{ 'pager__item--active': p === currentPage }"
+            @click="goPage(p as number)"
+          >{{ p }}</button>
+        </template>
+        <button
+          type="button"
+          class="pager__item pager__nav"
+          :disabled="currentPage === totalPages"
+          @click="goPage(currentPage + 1)"
+        >›</button>
+      </nav>
     </template>
 
     <ShareSheet
@@ -71,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { getRank } from '@/api/rank'
@@ -84,7 +107,8 @@ import { useCityStore } from '@/store/city'
 import type { RankFilters, RankItem } from '@/types'
 import { renderRankPoster } from '@/utils/shareImage'
 
-const PAGE_SIZE = 20
+/** 文档 9.2：榜单分页展示，每页 15 条 */
+const PAGE_SIZE = 15
 
 const route = useRoute()
 const router = useRouter()
@@ -95,23 +119,36 @@ if (city.value) store.setCity(city.value)
 
 const filters = ref<RankFilters>(readFilters())
 const items = ref<RankItem[]>([])
-const page = ref(1)
+const currentPage = ref(1)
+const total = ref(0)
 const loading = ref(false)
-const finished = ref(false)
 const state = ref<'ready' | 'collecting' | 'error'>('ready')
 const errorMessage = ref('')
 const showShare = ref(false)
 
-const cuisines = computed(() =>
-  Array.from(new Set(items.value.map((i) => i.cuisine).filter(Boolean) as string[])),
-)
-const areas = computed(() =>
-  Array.from(new Set(items.value.map((i) => i.area).filter(Boolean) as string[])),
-)
+/** 筛选选项跨页累积：翻页后下拉选项不丢失 */
+const cuisines = ref<string[]>([])
+const areas = ref<string[]>([])
+
+function mergeOptions(list: RankItem[]) {
+  const cuisineSet = new Set(cuisines.value)
+  const areaSet = new Set(areas.value)
+  list.forEach((item) => {
+    if (item.cuisine) cuisineSet.add(item.cuisine)
+    if (item.area) areaSet.add(item.area)
+  })
+  cuisines.value = Array.from(cuisineSet)
+  areas.value = Array.from(areaSet)
+}
 
 if (!city.value) {
   router.replace('/')
 }
+
+// 原 van-list 挂载时自动触发首次加载，改分页后需显式调用
+onMounted(() => {
+  loadPage()
+})
 
 function readFilters(): RankFilters {
   const q = route.query
@@ -128,33 +165,37 @@ function readFilters(): RankFilters {
 
 function reset() {
   items.value = []
-  page.value = 1
-  finished.value = false
+  currentPage.value = 1
+  total.value = 0
+  cuisines.value = []
+  areas.value = []
   state.value = 'ready'
 }
 
-async function onLoad() {
+/** 请求序号：快速连点时丢弃过期响应，避免旧页覆盖新页（表现为"点了没反应"） */
+let requestSeq = 0
+
+async function loadPage() {
   if (!city.value) {
     loading.value = false
-    finished.value = true
     return
   }
+  const seq = ++requestSeq
+  loading.value = true
   try {
     const data = await getRank({
       city: city.value,
-      page: page.value,
+      page: currentPage.value,
       pageSize: PAGE_SIZE,
       ...filters.value,
     })
-    if (page.value === 1) items.value = []
-    items.value.push(...data.items)
-    if (items.value.length >= data.total || data.items.length === 0) {
-      finished.value = true
-    } else {
-      page.value += 1
-    }
+    if (seq !== requestSeq) return
+    items.value = data.items
+    total.value = data.total
+    mergeOptions(data.items)
     state.value = 'ready'
   } catch (err) {
+    if (seq !== requestSeq) return
     if (isNotFound(err)) {
       state.value = 'collecting'
     } else {
@@ -162,16 +203,40 @@ async function onLoad() {
       errorMessage.value =
         err instanceof ApiError ? err.message : '加载失败，请稍后重试'
     }
-    finished.value = true
+    items.value = []
   } finally {
-    loading.value = false
+    if (seq === requestSeq) loading.value = false
   }
 }
 
 function reload() {
   reset()
-  loading.value = true
-  onLoad()
+  loadPage()
+}
+
+/** 总页数；分页条页码序列：首页/末页常驻，当前页±1，间隔以省略号截断 */
+const totalPages = computed(() => Math.ceil(total.value / PAGE_SIZE))
+const pageItems = computed<(number | '…')[]>(() => {
+  const last = totalPages.value
+  const cur = currentPage.value
+  if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1)
+  const wanted = new Set<number>([1, last, cur - 1, cur, cur + 1])
+  const pages = [...wanted].filter((n) => n >= 1 && n <= last).sort((a, b) => a - b)
+  const items: (number | '…')[] = []
+  let prev = 0
+  for (const p of pages) {
+    if (p - prev > 1) items.push('…')
+    items.push(p)
+    prev = p
+  }
+  return items
+})
+
+function goPage(page: number) {
+  if (page < 1 || page > totalPages.value || page === currentPage.value) return
+  currentPage.value = page
+  loadPage()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function onFilterChange(next: RankFilters) {
@@ -221,6 +286,10 @@ function shareUrl(): string {
   padding-top: 16px;
 }
 
+.list-grid {
+  transition: opacity 0.2s ease;
+}
+
 .rank__head {
   display: flex;
   align-items: center;
@@ -257,5 +326,71 @@ function shareUrl(): string {
   flex: none;
   display: flex;
   gap: 8px;
+}
+
+/* 分页条：首页/末页常驻，胶囊圆角、暖橙高亮，与站点风格统一（自绘，无 Vant） */
+.pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 8px;
+}
+
+.pager__item {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-tag);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-secondary);
+  font-size: var(--font-body);
+  font-weight: 500;
+  line-height: 34px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.pager__item:hover:not(.pager__item--active):not(:disabled):not(.pager__gap) {
+  background: var(--color-primary-soft);
+  border-color: transparent;
+  color: var(--color-primary);
+}
+
+.pager__item--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface-solid);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.28);
+  cursor: default;
+}
+
+.pager__item:disabled {
+  background: transparent;
+  border-color: transparent;
+  color: rgba(122, 115, 108, 0.4);
+  cursor: default;
+}
+
+.pager__nav {
+  width: 36px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 34px;
+}
+
+.pager__gap {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+  min-width: 24px;
+  padding: 0;
 }
 </style>
