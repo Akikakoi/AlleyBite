@@ -79,6 +79,16 @@ class Settings(BaseSettings):
         "铂仁国际中心,荟聚中心,达美商业中心,泰达时代中心,唐延中心城"
     )
 
+    # --- 方向四：存活监测状态机（保守阈值，上线首月建议只观察不判死时调大） ---
+    # 阈值为「连续未命中次数」：refresh_poi 每日 1 次，次数≈天数。
+    # 保守口径：5 天未查到才降权、10 天才判闭店（设计稿原拍 3/6，留真实分布校准空间）
+    liveness_suspect_misses: int = 5
+    liveness_closed_misses: int = 10
+    # --- 方向四：老店加成与 suspect 降权（打分侧） ---
+    score_suspect_multiplier: float = 0.9        # suspect 店质量分乘数
+    score_tenure_bonus_decade: float = 0.15      # 最早可靠证据 ≥10 年（3650 天）
+    score_tenure_bonus_half_decade: float = 0.08 # 最早可靠证据 ≥5 年（1825 天）
+
     # 实体对齐（文档 5.5）
     align_match_threshold: float = 0.85      # 综合相似度 ≥ 该值 → 归并为同一 restaurant
     align_review_threshold: float = 0.65     # 介于 [review, match) → 进人工审核队列
