@@ -36,6 +36,8 @@ export interface RankItem {
   recommended_dishes: string[]
   mention_count: number
   last_mentioned_at: string | null
+  /** 存活状态（active/suspect/closed，方向四）；早期快照可能缺失 */
+  liveness?: string
   sources: SourceRef[]
 }
 
@@ -70,6 +72,14 @@ export interface RestaurantDetail {
   open_hours: string | null
   /** 当前是否在营业时段（北京时间）；无法解析为 null */
   is_open: boolean | null
+  /** 最早可考证据时间（YYYY-MM-DD，方向四老店档案）；无提及记录为 null */
+  first_mentioned_at?: string | null
+  /** 年限是否可靠（true=有发布时间支撑；false=仅采集时间，前端不展示年限） */
+  first_evidence_confident?: boolean
+  /** 存活状态（active/suspect/closed/relocated，方向四） */
+  liveness?: string
+  /** 判定歇业的日期（YYYY-MM-DD，仅 closed 时有值） */
+  closed_at?: string | null
   mention_count: number
   last_mentioned_at: string | null
   praise_keywords: string[]

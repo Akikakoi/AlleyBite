@@ -7,6 +7,13 @@
     <div class="shop-card__body">
       <div class="shop-card__head">
         <h3 class="shop-card__name">{{ item.name }}</h3>
+        <span
+          v-if="item.liveness === 'suspect'"
+          class="shop-card__liveness"
+          title="近期未在高德地图查到该店"
+        >
+          近期未查到
+        </span>
         <span class="shop-card__score">{{ formatScore(item.display_score ?? item.score) }}</span>
       </div>
 
@@ -114,6 +121,17 @@ const metaText = computed(
   flex: none;
   color: var(--color-primary);
   font-weight: 700;
+}
+
+/* 方向四：suspect 弱角标（中性灰胶囊，与详情页徽标同体系，不用红色） */
+.shop-card__liveness {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-border);
+  color: var(--color-secondary);
+  font-size: var(--font-caption, 11px);
+  font-weight: 600;
 }
 
 .shop-card__meta {

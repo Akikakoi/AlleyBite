@@ -85,6 +85,21 @@
       <section class="card detail__block">
         <h2 class="detail__label">地址</h2>
         <p class="detail__address">{{ detail.address || '地址待补充' }}</p>
+        <p
+          v-if="detail.first_evidence_confident && detail.first_mentioned_at"
+          class="detail__tenure"
+        >
+          <span class="detail__hours-status is-tenure">
+            经营约 {{ tenureYears }} 年
+          </span>
+          <span class="text-sub">最早见载于 {{ tenureSinceYear }} 年报道</span>
+        </p>
+        <p v-if="livenessBadge" class="detail__hours">
+          <span class="detail__hours-status" :class="livenessBadge.class">
+            {{ livenessBadge.text }}
+          </span>
+          <span v-if="livenessBadge.hint" class="text-sub">{{ livenessBadge.hint }}</span>
+        </p>
         <p v-if="detail.open_hours" class="detail__hours">
           <span
             class="detail__hours-status"
@@ -361,6 +376,35 @@ const form = ref<{ type: FeedbackType; content: string; contact: string }>({
   type: 'info',
   content: '',
   contact: '',
+})
+
+// 方向四老店档案：年限只认可靠证据（first_evidence_confident），模板层已保证
+const tenureYears = computed(() => {
+  const first = detail.value?.first_mentioned_at
+  if (!first) return 0
+  return Math.max(1, Math.floor((Date.now() - new Date(first).getTime()) / (365.25 * 864e5)))
+})
+const tenureSinceYear = computed(() => detail.value?.first_mentioned_at?.slice(0, 4) ?? '')
+
+// 存活状态徽标（方向四第 4 批）：suspect 用中性灰弱提示，不用红色警示——
+// 未证实的事不定性；closed 才明确展示歇业
+const livenessBadge = computed<{ text: string; class: string; hint?: string } | null>(() => {
+  const liveness = detail.value?.liveness
+  if (liveness === 'suspect') {
+    return {
+      text: '近期未查到',
+      class: 'is-suspect',
+      hint: '近期未在高德地图查到该店，请以到店实际情况为准',
+    }
+  }
+  if (liveness === 'closed') {
+    return {
+      text: '已标记歇业',
+      class: 'is-closed',
+      hint: detail.value?.closed_at ? `于 ${detail.value.closed_at} 标记` : undefined,
+    }
+  }
+  return null
 })
 
 async function load() {
@@ -683,6 +727,26 @@ onMounted(load)
 .detail__hours-status.is-closed {
   background: rgba(224, 82, 82, 0.12);
   color: #c2413d;
+}
+
+/* 方向四：suspect 弱提示（中性灰，不用红色——未证实的事不定性） */
+.detail__hours-status.is-suspect {
+  background: var(--color-border);
+  color: var(--color-secondary);
+}
+
+/* 方向四：老店年限徽标（暖色浅底，与站点主色呼应） */
+.detail__hours-status.is-tenure {
+  background: rgba(255, 107, 53, 0.1);
+  color: var(--color-primary, #ff6b35);
+}
+
+.detail__tenure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-weight: 600;
 }
 
 .detail__sources {
