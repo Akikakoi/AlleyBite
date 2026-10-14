@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 from sqlalchemy import select
@@ -171,15 +171,26 @@ def upsert_pois(
     session: Session,
     city_name: str,
     records: list[PoiRecord],
+    *,
+    seen_at: datetime | None = None,
 ) -> tuple[int, int]:
     """把 POI 写入 restaurant（代码级 upsert，无唯一约束约束下的先查后插）。
 
     匹配顺序：同城 (poi_source, poi_id) → 同城 name_norm 兜底。
     返回 (新建数, 命中/更新数)。
+
+    存活监测（方向四第 2 批）：命中（含新建）即刷 last_seen_at / 清零
+    miss_count，suspect 回活；未命中店的 miss 累计由 runner 在 upsert 后
+    调 mark_city_misses 完成。seen_at 由调用方传入本轮起始时间，保证
+    「命中标记」与「未命中判定」用同一时钟基准。
     """
     from ..db.models import Restaurant, ShopAlias
     from ..services.alignment import get_or_create_city
+    from ..services.liveness import mark_seen
     from ..services.normalize import normalize_shop_name
+
+    if seen_at is None:
+        seen_at = datetime.now(timezone.utc)
 
     city = get_or_create_city(session, city_name)
     created = 0
@@ -228,6 +239,9 @@ def upsert_pois(
         # 营业时间属易变信息：以高德最新值为准，非空即覆盖
         if record.open_hours:
             restaurant.open_hours = record.open_hours
+
+        # 存活监测：本轮 POI 命中（新建或匹配均算「高德仍能查到」）
+        mark_seen(restaurant, seen_at)
 
         if norm and norm != restaurant.name_norm:
             exists = session.scalar(

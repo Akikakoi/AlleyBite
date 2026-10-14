@@ -80,6 +80,7 @@ def _build_beat_schedule(
     amap_hour: int,
     text_interval_hours: int,
     pipeline_hour: int,
+    liveness_hour: int = 4,
     weekly_report: bool,
 ) -> dict:
     """beat 计划（纯函数，便于测试）。时间均为 Asia/Shanghai 本地时区。"""
@@ -98,6 +99,11 @@ def _build_beat_schedule(
             "task": "tasks.run_pipeline",
             "schedule": crontab(hour=pipeline_hour, minute=0),
         },
+        # 方向四第 3 批：排在 POI 刷新（amap_hour）之后推进存活状态机
+        "liveness-daily": {
+            "task": "tasks.evaluate_liveness",
+            "schedule": crontab(hour=max(amap_hour, liveness_hour), minute=30),
+        },
     }
     if weekly_report:
         schedule["quality-weekly"] = {
@@ -112,6 +118,7 @@ app.conf.beat_schedule = _build_beat_schedule(
     amap_hour=_env_int("SCHEDULE_AMAP_HOUR", 3),
     text_interval_hours=_env_int("SCHEDULE_TEXT_INTERVAL_HOURS", 6),
     pipeline_hour=_env_int("SCHEDULE_PIPELINE_HOUR", 5),
+    liveness_hour=_env_int("SCHEDULE_LIVENESS_HOUR", 4),
     weekly_report=True,
 )
 
@@ -174,6 +181,12 @@ def crawl_text() -> str:
 def run_pipeline() -> str:
     """清洗 → 抽取 → 对齐 → 打分 → 榜单快照（全部有内容的城市）。"""
     return _run_script("run_pipeline.py", [], "抽取→对齐→打分→榜单")
+
+
+@app.task(name="tasks.evaluate_liveness")
+def evaluate_liveness() -> str:
+    """方向四第 3 批：推进存活状态机（miss 阈值 → suspect/closed）。"""
+    return _run_script("evaluate_liveness.py", [], "存活监测状态机")
 
 
 @app.task(name="tasks.quality_report")

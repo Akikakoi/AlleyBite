@@ -97,11 +97,20 @@ def _run_poi_source(collector: AmapPoiCollector, result: SourceResult, session: 
         result.status = "skipped"
         result.error = "缺少 city_hint，无法检索 POI"
         return
+    from ..services.liveness import mark_city_misses
+
+    # 本轮时钟基准：命中店 last_seen_at 刷到该刻，未命中判定用同刻比较
+    seen_at = to_utc(collector.deps.now())
     records = collector.search()
-    created, matched = upsert_pois(session, collector.city_hint, records)
+    created, matched = upsert_pois(session, collector.city_hint, records, seen_at=seen_at)
+    # 存活监测（方向四第 2 批）：仅在有真实检索结果时累计 miss，
+    # 避免 API 异常/配额耗尽返回空列表导致全城误杀
+    miss_marked = (
+        mark_city_misses(session, collector.city_hint, before=seen_at) if records else 0
+    )
     result.fetched = len(records)
     result.poi_written = created
-    result.detail = {"poi_matched": matched}
+    result.detail = {"poi_matched": matched, "poi_miss_marked": miss_marked}
 
 
 def run_source(

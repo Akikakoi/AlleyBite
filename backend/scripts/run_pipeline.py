@@ -28,8 +28,17 @@ def main() -> int:
     init_db()
     cache = make_rank_cache(settings)
     city = sys.argv[1] if len(sys.argv) > 1 else None
+    # 防呆：位置参数误传选项（如 --help 会被当成城市名建出假城市 + 空快照）
+    if city and city.startswith("-"):
+        print(__doc__)
+        return 0
 
     with SessionLocal() as session:
+        if city:
+            # 城市行在对齐时才惰性创建：未知城市名直接拒绝，防止误建
+            if city not in list_city_names(session):
+                print(f"城市不存在：{city}（可选：{'、'.join(list_city_names(session))}）")
+                return 1
         names = [city] if city else list_city_names(session)
         if not names:
             print("没有可运行的城市（先用 /api/v1/ingest 或 demo 灌入数据）。")
