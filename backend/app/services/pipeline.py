@@ -6,11 +6,11 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core.config import Settings, get_settings
-from ..db.models import City, JobRun, RankSnapshot, RawContent
+from ..db.models import City, JobRun, RankSnapshot, RawContent, Restaurant
 from .alignment import align_mentions, get_or_create_city
 from .cache import RankCache
 from .extract_pipeline import extract_raw_content
@@ -111,6 +111,26 @@ def list_cities(session: Session) -> list[dict]:
         ).all()
     )
     ranked_city_ids = set(session.scalars(select(RankSnapshot.city_id).distinct()).all())
+    # 热度指标：各城市已收录店铺数（City 行在对齐时才惰性创建，线索城市可能尚无行）
+    restaurant_counts = dict(
+        session.execute(
+            select(City.name, func.count(Restaurant.id))
+            .join(Restaurant, Restaurant.city_id == City.id)
+            .group_by(City.name)
+        ).all()
+    )
+    # 榜单条数：各城市最新快照的 items 长度（与榜单页所见一致）
+    latest_snapshot_ids = (
+        select(func.max(RankSnapshot.id)).group_by(RankSnapshot.city_id)
+    )
+    rank_counts = dict(
+        session.execute(
+            select(
+                RankSnapshot.city_id,
+                func.json_array_length(RankSnapshot.items),
+            ).where(RankSnapshot.id.in_(latest_snapshot_ids))
+        ).all()
+    )
 
     rows: list[dict] = []
     for name in sorted(set(cities) | hints):
@@ -121,6 +141,8 @@ def list_cities(session: Session) -> list[dict]:
                 "code": city.code if city else None,
                 "status": city.status if city else "collecting",
                 "has_rank": bool(city and city.id in ranked_city_ids),
+                "restaurant_count": int(restaurant_counts.get(name, 0)),
+                "rank_count": int(rank_counts.get(city.id, 0)) if city else 0,
             }
         )
     return rows
