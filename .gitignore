@@ -42,3 +42,9 @@ Thumbs.db
 # WorkBuddy 工作目录（项目记忆/临时产物，不入库）
 .workbuddy/
 backend/test_uploads/
+
+# 浏览器自动化调试产物（无障碍树快照与页面截图，验证用，不入库）
+.playwright-cli/
+/pager-*.png
+/pagination-*.png
+/page-*.png
