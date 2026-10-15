@@ -58,3 +58,17 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* 动效无障碍（AUDIT #6）：prefers-reduced-motion 温和降级——
+   掐掉位移/缩放/关键帧动画（Element Plus 弹层、消息提示、骨架屏微光），
+   保留不透明度与颜色过渡辅助理解 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: opacity, background-color, color, border-color, box-shadow !important;
+    scroll-behavior: auto !important;
+  }
+}

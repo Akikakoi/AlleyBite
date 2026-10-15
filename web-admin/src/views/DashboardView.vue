@@ -101,6 +101,9 @@ const rawChartRef = ref<HTMLElement>()
 const tokensChartRef = ref<HTMLElement>()
 let charts: echarts.ECharts[] = []
 
+/** 内部看板是读数据的工具：关掉默认 1000ms 入场动画，刷新也不再重放 */
+const CHART_BASE = { animation: false } as const
+
 const overviewCards = computed(() => {
   if (!stats.value) return []
   const o = stats.value.overview
@@ -139,7 +142,7 @@ function renderCharts() {
 
   if (jobsChartRef.value) {
     const chart = echarts.init(jobsChartRef.value)
-    chart.setOption({
+    chart.setOption({ ...CHART_BASE,
       tooltip: { trigger: 'axis' },
       legend: { data: ['成功', '失败'] },
       grid: { left: 40, right: 16, top: 32, bottom: 24 },
@@ -155,7 +158,7 @@ function renderCharts() {
 
   if (mentionsChartRef.value) {
     const chart = echarts.init(mentionsChartRef.value)
-    chart.setOption({
+    chart.setOption({ ...CHART_BASE,
       tooltip: { trigger: 'axis' },
       grid: { left: 40, right: 16, top: 16, bottom: 24 },
       xAxis: { type: 'category', data: stats.value.mentions_14d.map((d) => d.date.slice(5)) },
@@ -177,7 +180,7 @@ function renderCharts() {
   if (cityChartRef.value) {
     const chart = echarts.init(cityChartRef.value)
     const rows = stats.value.city_restaurants
-    chart.setOption({
+    chart.setOption({ ...CHART_BASE,
       tooltip: { trigger: 'axis' },
       legend: { data: ['有效店铺', '全部'] },
       grid: { left: 40, right: 16, top: 32, bottom: 24 },
@@ -193,7 +196,7 @@ function renderCharts() {
 
   if (rawChartRef.value) {
     const chart = echarts.init(rawChartRef.value)
-    chart.setOption({
+    chart.setOption({ ...CHART_BASE,
       tooltip: { trigger: 'item' },
       legend: { bottom: 0 },
       series: [
@@ -210,7 +213,7 @@ function renderCharts() {
   }
   if (tokensChartRef.value) {
     const chart = echarts.init(tokensChartRef.value)
-    chart.setOption({
+    chart.setOption({ ...CHART_BASE,
       tooltip: { trigger: 'axis' },
       legend: { data: ['输入', '输出'] },
       grid: { left: 64, right: 16, top: 32, bottom: 24 },
