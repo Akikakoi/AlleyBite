@@ -1,7 +1,7 @@
 <template>
   <div class="page map">
     <header class="map__head">
-      <button class="map__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="map__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <div class="map__title">
         <h1 class="page-title">{{ city }}</h1>
         <p class="text-sub">苍蝇馆子榜 · 地图模式</p>
@@ -22,6 +22,7 @@
         <div ref="containerRef" class="map__canvas" />
         <p class="text-sub map__hint">共 {{ locatedItems.length }} 家带坐标的店铺，点击标记查看详情</p>
 
+        <Transition name="popup-rise">
         <section v-if="selected" class="card map__popup">
           <div class="map__popup-head">
             <h3 class="map__popup-name">{{ selected.name }}</h3>
@@ -38,6 +39,7 @@
             <van-button size="small" round plain @click="navigate(selected)">导航</van-button>
           </div>
         </section>
+        </Transition>
       </template>
     </template>
 
@@ -265,5 +267,29 @@ onBeforeUnmount(() => {
 
 .map__fallback {
   margin-top: 16px;
+}
+
+/* 地图弹窗：从 marker 点击处轻微上浮入场，退场同路径下沉（AUDIT #4 对称路径）；
+   reduce 下降级块会掐掉 transform，仅保留 opacity 淡入 */
+.popup-rise-enter-active {
+  transition:
+    opacity var(--dur-ui) var(--ease-out),
+    transform var(--dur-ui) var(--ease-out);
+}
+
+.popup-rise-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.popup-rise-leave-active {
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+
+.popup-rise-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

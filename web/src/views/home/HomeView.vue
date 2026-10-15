@@ -2,7 +2,7 @@
   <div class="page home">
     <header class="home__hero">
       <div class="home__topbar">
-        <button class="home__mine" @click="router.push('/mine')">
+        <button class="home__mine press-feedback hover-tint" @click="router.push('/mine')">
           {{ userStore.isLoggedIn ? `我的 · ${userStore.username}` : '我的' }}
         </button>
       </div>
@@ -34,7 +34,7 @@
         <article
           v-for="item in recommend.items"
           :key="item.restaurant_id"
-          class="card home__rec"
+          class="card home__rec press-feedback hover-tint"
           @click="goDetail(item)"
         >
           <p class="home__rec-name">{{ item.name }}</p>
@@ -51,6 +51,7 @@
         <div class="home__sort" role="group" aria-label="城市排序方式">
           <button
             type="button"
+            class="press-feedback hover-tint"
             :class="{ 'is-on': sortBy === 'hot' }"
             @click="sortBy = 'hot'"
           >
@@ -58,6 +59,7 @@
           </button>
           <button
             type="button"
+            class="press-feedback hover-tint"
             :class="{ 'is-on': sortBy === 'pinyin' }"
             @click="sortBy = 'pinyin'"
           >
@@ -78,7 +80,7 @@
         <button
           v-for="city in sortedCities"
           :key="city.name"
-          class="city-chip card"
+          class="city-chip card press-feedback hover-tint"
           @click="go(city.name)"
         >
           <span class="city-chip__name">{{ city.name }}</span>
@@ -99,7 +101,7 @@
         <button
           v-for="name in store.recent"
           :key="name"
-          class="city-chip card"
+          class="city-chip card press-feedback hover-tint"
           @click="go(name)"
         >
           <span class="city-chip__name">{{ name }}</span>

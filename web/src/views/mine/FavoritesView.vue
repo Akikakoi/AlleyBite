@@ -1,7 +1,7 @@
 <template>
   <div class="page fav">
     <header class="fav__bar">
-      <button class="fav__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="fav__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <div class="fav__title">
         <h1 class="page-title">我的收藏</h1>
         <p class="text-sub">共 {{ items.length }} 家店</p>
@@ -20,7 +20,7 @@
         <article
           v-for="item in items"
           :key="item.restaurant_id"
-          class="card fav-card"
+          class="card fav-card press-feedback"
           @click="openDetail(item)"
         >
           <div class="fav-card__body">
@@ -145,11 +145,6 @@ onMounted(load)
   gap: 12px;
   padding: 16px;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.fav-card:active {
-  transform: scale(0.99);
 }
 
 .fav-card__body {

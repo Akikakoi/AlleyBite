@@ -22,6 +22,11 @@
   --font-hint: 12px;
   --shadow-card: 0 6px 20px rgba(38, 34, 31, 0.08);
   --page-pad: 16px;
+
+  /* 动效 token（AUDIT 规范值）：UI 动画一律 <300ms，按压反馈 160ms 专档 */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-press: 160ms;
+  --dur-ui: 200ms;
 }
 
 * {
@@ -97,6 +102,56 @@ a {
 @media (min-width: 1200px) {
   .list-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 按压反馈工具类：仅动 transform（合成器属性），挂载于自绘可点元素；
+   Vant 组件自带按压态，不挂此类 */
+.press-feedback {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+.press-feedback:active {
+  transform: scale(0.97);
+}
+
+/* 桌面端 hover 供示：仅精细指针设备生效（AUDIT #6，防移动端 tap 误触发 hover）；
+   自带完整 transition（transform + 颜色）——与 .press-feedback 叠加时以本类为准。
+   注意 .hover-tint.hover-tint:hover 的双类名是有意的：组件 scoped 样式
+   （如 .home__mine[data-v-x]，特异度 0,2,0）会压过单类名 hover 规则平局，
+   抬到 0,3,0 保证工具类的 hover 态稳定生效 */
+.hover-tint {
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-ui) ease,
+    border-color var(--dur-ui) ease,
+    color var(--dur-ui) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hover-tint.hover-tint:hover {
+    background: var(--color-primary-soft);
+    border-color: transparent;
+    color: var(--color-primary);
+  }
+}
+
+/* 动效无障碍（AUDIT #6）：prefers-reduced-motion 温和降级——
+   掐掉位移/缩放/关键帧动画，保留不透明度与颜色过渡（≤200ms）辅助理解；
+   Vant 时长变量归零，弹层/下拉/标签页切换瞬现；scrollTo 由 JS 侧切 auto */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --van-duration-base: 0.01ms;
+    --van-duration-fast: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: opacity, background-color, color, border-color, box-shadow !important;
+    scroll-behavior: auto !important;
   }
 }
 

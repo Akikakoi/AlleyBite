@@ -1,7 +1,7 @@
 <template>
   <div class="page rank">
     <header class="rank__head">
-      <button class="rank__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="rank__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <div class="rank__title">
         <h1 class="page-title">{{ city }}</h1>
         <p class="text-sub">苍蝇馆子榜 · 综合分排序</p>
@@ -236,7 +236,9 @@ function goPage(page: number) {
   if (page < 1 || page > totalPages.value || page === currentPage.value) return
   currentPage.value = page
   loadPage()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  // 动效无障碍：reduce 模式下直跳，不做平滑滚动
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' })
 }
 
 function onFilterChange(next: RankFilters) {
@@ -287,7 +289,7 @@ function shareUrl(): string {
 }
 
 .list-grid {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--dur-ui) var(--ease-out);
 }
 
 .rank__head {
@@ -352,9 +354,9 @@ function shareUrl(): string {
   text-align: center;
   cursor: pointer;
   transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    border-color 0.2s ease;
+    background-color var(--dur-ui) ease,
+    color var(--dur-ui) ease,
+    border-color var(--dur-ui) ease;
 }
 
 .pager__item:hover:not(.pager__item--active):not(:disabled):not(.pager__gap) {

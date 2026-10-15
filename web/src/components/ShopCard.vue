@@ -1,5 +1,5 @@
 <template>
-  <article class="shop-card card" @click="emit('click')">
+  <article class="shop-card card press-feedback" @click="emit('click')">
     <div class="shop-card__rank" :class="{ 'is-top': item.rank <= 3 }">
       {{ item.rank }}
     </div>
@@ -70,11 +70,6 @@ const metaText = computed(
   gap: 12px;
   padding: 16px;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.shop-card:active {
-  transform: scale(0.99);
 }
 
 .shop-card__rank {

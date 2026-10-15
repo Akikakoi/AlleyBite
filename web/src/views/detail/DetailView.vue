@@ -1,7 +1,7 @@
 <template>
   <div class="page detail">
     <header class="detail__bar">
-      <button class="detail__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="detail__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <span class="text-sub">店铺详情</span>
       <span class="detail__bar-spacer" />
     </header>
@@ -146,7 +146,7 @@
           <li
             v-for="(source, index) in detail.sources"
             :key="index"
-            class="detail__source"
+            class="detail__source press-feedback"
             @click="openSource(source)"
           >
             <p class="detail__source-head">
@@ -276,7 +276,7 @@
             v-for="option in FEEDBACK_TYPES"
             :key="option.value"
             type="button"
-            class="feedback__type"
+            class="feedback__type press-feedback"
             :class="{ 'feedback__type--on': form.type === option.value }"
             @click="form.type = option.value"
           >
@@ -815,6 +815,11 @@ onMounted(load)
   color: var(--color-secondary);
   font-size: 13px;
   cursor: pointer;
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-ui) ease,
+    border-color var(--dur-ui) ease,
+    color var(--dur-ui) ease;
 }
 
 .feedback__type--on {
