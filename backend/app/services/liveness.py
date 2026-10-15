@@ -83,10 +83,15 @@ def mark_seen(restaurant: Restaurant, seen_at: datetime) -> None:
 def mark_city_misses(session: Session, city_name: str, *, before: datetime) -> int:
     """对本城本轮 POI 刷新未命中的底座店铺 miss_count += 1（第 2 批）。
 
-    判定口径：last_seen_at < before（含 NULL，即从未被刷新标记过）——
-    命中店在 upsert 时已把 last_seen_at 刷到 before 当刻，天然被排除。
-    仅处理有 POI 底座（poi_id 非空）的店：高德检索是它们的存在性信号，
-    纯 mention 店本就不靠 POI 召回，不参与计数。closed 为终端态不再累计。
+    判定口径：last_seen_at < before——命中店在 upsert 时已把 last_seen_at 刷到
+    before 当刻，天然被排除。
+
+    **仅统计曾经命中过的店**（last_seen_at 非空）：固定关键词检索存在天然盲区
+    （2026-10-15 实测全局约 35% 的底座店从未被召回，老城达 50%），盲区店没有
+    「失联」概念——若对它们累计 miss，3 天后就会被整批误杀降权。只有先见过、
+    后丢失才是真失联信号。
+
+    仅处理有 POI 底座（poi_id 非空）的店；closed 为终端态不再累计。
     """
     city = session.scalar(select(City).where(City.name == city_name))
     if city is None:
@@ -96,7 +101,8 @@ def mark_city_misses(session: Session, city_name: str, *, before: datetime) -> i
             Restaurant.city_id == city.id,
             Restaurant.poi_id.is_not(None),
             Restaurant.liveness != "closed",
-            Restaurant.last_seen_at.is_(None) | (Restaurant.last_seen_at < before),
+            Restaurant.last_seen_at.is_not(None),
+            Restaurant.last_seen_at < before,
         )
     ).all()
     for restaurant in rows:

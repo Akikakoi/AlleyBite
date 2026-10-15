@@ -176,8 +176,11 @@ def test_mark_city_misses_counts_unmatched_poi_shops_only():
         # 命中店：upsert 后 last_seen_at == seen_at，不应被计 miss
         hit = _make_restaurant(s, name="命中店", poi_id="B001")
         mark_seen(hit, seen_at)
-        # 未命中店：有 POI 底座、last_seen_at 落后 → miss +1
-        miss = _make_restaurant(s, name="失联店", poi_id="B002", miss_count=1)
+        # 未命中店：有 POI 底座、曾经见过但 last_seen_at 落后 → miss +1
+        miss = _make_restaurant(
+            s, name="失联店", poi_id="B002", miss_count=1,
+            last_seen_at=seen_at - timedelta(days=2),
+        )
         # 纯 mention 店：无 POI 底座，不参与计数
         _make_restaurant(s, name="纯提及店")
         # closed 店：终端态不再累计
@@ -195,14 +198,18 @@ def test_mark_city_misses_counts_unmatched_poi_shops_only():
         assert s.query(Restaurant).filter_by(name="纯提及店").one().miss_count == 0
 
 
-def test_mark_city_misses_never_seen_shops_count():
-    """首次运行：从未被标记过（last_seen_at IS NULL）的底座店也计 miss。"""
+def test_mark_city_misses_never_seen_shops_do_not_count():
+    """检索盲区店（从未命中，last_seen_at IS NULL）不累计 miss：
+    固定关键词召回有天然盲区（实测全局约 35%），盲区店没有「失联」概念，
+    若累计会在数日内整批误杀降权。只有先见过、后丢失才是真失联。"""
     with memory_session() as s:
-        _make_restaurant(s, name="新底座店", poi_id="B100")
+        _make_restaurant(s, name="盲区店", poi_id="B100")
 
         marked = mark_city_misses(s, "成都", before=_utc(2026, 10, 14, 3, 0))
 
-        assert marked == 1
+        assert marked == 0
+        row = s.query(Restaurant).filter_by(name="盲区店").one()
+        assert row.miss_count == 0
 
 
 def test_mark_city_misses_unknown_city_is_noop():
