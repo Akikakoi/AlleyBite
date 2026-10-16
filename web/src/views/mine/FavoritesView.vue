@@ -16,7 +16,7 @@
     </EmptyState>
 
     <template v-else>
-      <div v-if="items.length" class="list-grid">
+      <TransitionGroup v-if="items.length" name="fav-exit" tag="div" class="list-grid">
         <article
           v-for="item in items"
           :key="item.restaurant_id"
@@ -50,7 +50,7 @@
             取消收藏
           </van-button>
         </article>
-      </div>
+      </TransitionGroup>
       <EmptyState
         v-else
         title="还没有收藏"
@@ -187,5 +187,22 @@ onMounted(load)
 .fav-card__remove {
   flex: none;
   align-self: center;
+}
+
+/* 收藏移除：条目淡出+左移退场，剩余项由 TransitionGroup FLIP 平滑收拢；
+   reduce 下全局降级块掐掉 transform，仅保留 opacity 淡出 */
+.fav-exit-leave-active {
+  transition:
+    opacity var(--dur-ui) var(--ease-out),
+    transform var(--dur-ui) var(--ease-out);
+}
+
+.fav-exit-leave-to {
+  opacity: 0;
+  transform: translateX(-16px);
+}
+
+.fav-exit-move {
+  transition: transform var(--dur-ui) var(--ease-out);
 }
 </style>
