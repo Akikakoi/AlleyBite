@@ -44,12 +44,14 @@
         :style="{ opacity: loading ? 0.55 : 1 }"
       >
         <ShopCard
-          v-for="item in items"
+          v-for="(item, idx) in items"
           :key="item.restaurant_id"
           :item="item"
+          :style="{ '--stagger-delay': Math.min(idx * 30, 240) + 'ms' }"
           @click="openDetail(item)"
         />
       </div>
+      <SkeletonGrid v-else-if="loading" />
       <EmptyState
         v-else-if="!loading"
         title="没有符合筛选的店铺"
@@ -101,6 +103,7 @@ import { getRank } from '@/api/rank'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import SkeletonGrid from '@/components/SkeletonGrid.vue'
 import ShareSheet from '@/components/ShareSheet.vue'
 import ShopCard from '@/components/ShopCard.vue'
 import { useCityStore } from '@/store/city'
@@ -290,6 +293,20 @@ function shareUrl(): string {
 
 .list-grid {
   transition: opacity var(--dur-ui) var(--ease-out);
+}
+
+/* 榜单卡片入场：淡入上浮按序错峰（--stagger-delay 由模板按 index 注入，上限 240ms）；
+   reduce 下全局降级块把 animation-duration 压到 ≈0 且 animation-delay 归零，卡片直出 */
+.list-grid > * {
+  animation: rank-rise var(--dur-ui) var(--ease-out) backwards;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+@keyframes rank-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
 .rank__head {

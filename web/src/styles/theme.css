@@ -127,9 +127,9 @@ a {
 .hover-tint {
   transition:
     transform var(--dur-press) var(--ease-out),
-    background-color var(--dur-ui) ease,
-    border-color var(--dur-ui) ease,
-    color var(--dur-ui) ease;
+    background-color var(--dur-ui) var(--ease-out),
+    border-color var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -140,9 +140,25 @@ a {
   }
 }
 
+/* 路由级页面切换（App.vue Transition）：淡入走 --dur-ui，淡出走 --dur-exit（快出慢进）；
+   reduce 下 opacity 过渡保留（项目降级哲学：透明度/颜色不掐） */
+.page-fade-enter-active {
+  transition: opacity var(--dur-ui) var(--ease-out);
+}
+
+.page-fade-leave-active {
+  transition: opacity var(--dur-exit) var(--ease-out);
+}
+
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+}
+
 /* 动效无障碍（AUDIT #6）：prefers-reduced-motion 温和降级——
    掐掉位移/缩放/关键帧动画，保留不透明度与颜色过渡（≤200ms）辅助理解；
-   Vant 时长变量归零，弹层/下拉/标签页切换瞬现；scrollTo 由 JS 侧切 auto */
+   Vant 时长变量归零，弹层/下拉/标签页切换瞬现；scrollTo 由 JS 侧切 auto；
+   animation-delay 一并归零：backwards 填充的入场动画（如榜单 stagger）不得借延迟藏住首屏 */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --van-duration-base: 0.01ms;
@@ -154,6 +170,7 @@ a {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-property: opacity, background-color, color, border-color, box-shadow !important;
     scroll-behavior: auto !important;
   }
