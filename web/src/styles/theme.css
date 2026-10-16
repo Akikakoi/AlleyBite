@@ -3,6 +3,9 @@
 :root {
   --color-primary: #ff6b35;
   --color-primary-soft: rgba(255, 107, 53, 0.12);
+
+  /* Vant 主题对齐：库默认蓝 #1989fa 改为站点暖橙，primary 按钮/tab 激活态随之统一 */
+  --van-primary-color: #ff6b35;
   --color-secondary: #2f4f4f;
   --color-bg: #f7f5f2;
   --color-surface: rgba(255, 255, 255, 0.82);

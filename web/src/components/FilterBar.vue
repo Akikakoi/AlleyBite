@@ -1,5 +1,5 @@
 <template>
-  <van-dropdown-menu class="filter-bar" active-color="#FF6B35">
+  <van-dropdown-menu class="filter-bar">
     <van-dropdown-item v-model="timeValue" :options="TIME_OPTIONS" @change="emitChange" />
     <van-dropdown-item
       v-model="cuisineValue"
