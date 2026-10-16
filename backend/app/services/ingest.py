@@ -1,4 +1,9 @@
-"""入库流水线：原始内容 → raw_content + content_chunk（对接文档 5.1/5.2/7.2）。"""
+"""入库流水线：原始内容 → raw_content + content_chunk（对接文档 5.1/5.2/7.2）。
+
+重复抓取同一条内容（RSS 轮询、无发布时间的固定页）是常态：重入库必须
+**保留既有清洗与抽取结果**（clean_fingerprint 一致时短路），否则会反复
+作废 mention→restaurant 挂靠并重复烧 LLM 抽取费用。
+"""
 
 import hashlib
 from datetime import datetime, timezone
@@ -11,10 +16,25 @@ from ..db.models import ContentChunk, Mention, RawContent
 from .chunker import chunk_with_spans
 from .cleaner import clean_text
 
+# 已完成清洗的终态：命中同指纹时直接短路（failed/raw 仍走重建，保留重试语义）
+_CLEANED_STATUSES = ("cleaned", "extracted")
+
 
 def compute_content_hash(raw_text: str) -> str:
     """文档 4.3 的幂等键：以内容 hash 去重。"""
     return "sha256:" + hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+
+
+def clean_fingerprint(settings: Settings) -> str:
+    """清洗结果指纹：清洗/切块配置不变 ⇒ 同一 raw_text 的清洗结果必然一致。
+
+    调整清洗配置（如切块大小）后指纹变化，重复入库会自动重算与重建。
+    """
+    material = (
+        f"v1|{settings.min_chinese_ratio}"
+        f"|{settings.extract_max_tokens}|{settings.chunk_overlap_tokens}"
+    )
+    return "sha256:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def ingest_raw_content(
@@ -35,6 +55,7 @@ def ingest_raw_content(
     """
     settings = settings or get_settings()
     digest = compute_content_hash(raw_text)
+    fingerprint = clean_fingerprint(settings)
 
     row = session.scalar(
         select(RawContent).where(
@@ -46,12 +67,20 @@ def ingest_raw_content(
         session.add(row)
         session.flush()
 
+    # 元数据回填：重复抓取可能带来后到的发布时间/城市线索/标题等，仅补空缺不改写
     row.source_url = source_url or row.source_url
-    row.city_hint = city_hint or row.city_hint
+    row.city_hint = (city_hint or row.city_hint or "")[:64] or None
     row.raw_title = raw_title or row.raw_title
     row.raw_ref = raw_ref or row.raw_ref
     row.published_at = published_at or row.published_at
     row.crawled_at = datetime.now(timezone.utc)
+
+    # 幂等短路：同内容 + 同清洗配置 + 清洗已生效 ⇒ 清洗与抽取结果仍然有效。
+    # 不删 mention、不重建 chunks、不把 status 打回 cleaned——否则每天定时任务
+    # 都会把同样内容重抽一遍（LLM 费用）并作废 mention→restaurant 挂靠。
+    if row.status in _CLEANED_STATUSES and row.clean_fingerprint == fingerprint:
+        session.flush()
+        return row
 
     report = clean_text(raw_text, min_chinese_ratio=settings.min_chinese_ratio)
     row.cleaned_text = report.text or None
@@ -86,6 +115,7 @@ def ingest_raw_content(
     row.chunk_count = len(chunks)
     row.cleaned_at = datetime.now(timezone.utc)
     row.status = "cleaned"
+    row.clean_fingerprint = fingerprint
     session.flush()
     return row
 

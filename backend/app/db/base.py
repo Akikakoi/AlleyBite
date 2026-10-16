@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from ..core.config import get_settings
@@ -19,6 +19,19 @@ def _create_engine(url: str, echo: bool):
 
 engine = _create_engine(get_settings().database_url, get_settings().db_echo)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_foreign_keys_on(dbapi_connection, _record):
+    """SQLite 默认不强制外键，生产 PostgreSQL 始终强制。
+
+    本地打开后行为与生产一致：脏外键（如 view_event 指向已删店铺）
+    立即报 IntegrityError，而不是静默成功、上线后炸 500。
+    """
+    if get_settings().database_url.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 # create_all 只建新表、不改既有表；此处为既有库补齐后加列（接 Alembic 后移除）。
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
@@ -40,6 +53,14 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "miss_count": "INTEGER NOT NULL DEFAULT 0",
         "liveness": "VARCHAR(16) NOT NULL DEFAULT 'active'",
         "closed_at": "TIMESTAMP",
+    },
+    "raw_content": {
+        # ingest 幂等短路指纹（2026-10-16）：重复抓取不再作废清洗/抽取结果
+        "clean_fingerprint": "VARCHAR(80)",
+    },
+    "email_code": {
+        # 邮箱验证码防爆破：连续失败达上限即作废该码（2026-10-16）
+        "fail_count": "INTEGER NOT NULL DEFAULT 0",
     },
 }
 

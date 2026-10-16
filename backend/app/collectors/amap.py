@@ -52,6 +52,14 @@ def _to_str(value: object) -> str | None:
     return None
 
 
+def _clip(value: object, limit: int) -> str | None:
+    """截断到 restaurant 列宽以内（PostgreSQL 严格校验 VARCHAR 长度）。"""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v[:limit] or None
+
+
 def parse_poi(raw: dict) -> PoiRecord | None:
     """高德 poi 对象 → PoiRecord；缺 id/name 视为无效。"""
     poi_id = str(raw.get("id") or "").strip()
@@ -71,9 +79,9 @@ def parse_poi(raw: dict) -> PoiRecord | None:
         hours = hours[:120]
     return PoiRecord(
         poi_id=poi_id,
-        name=name,
-        address=(raw.get("address") or None),
-        area=(raw.get("adname") or None),
+        name=name[:128],
+        address=_clip(raw.get("address"), 256),
+        area=_clip(raw.get("adname"), 64),
         latitude=latitude,
         longitude=longitude,
         typecode=(raw.get("typecode") or None),

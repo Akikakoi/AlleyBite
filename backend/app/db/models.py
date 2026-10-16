@@ -49,6 +49,9 @@ class RawContent(Base):
     lang: Mapped[str | None] = mapped_column(String(16))
     # raw | cleaned | extracted | failed
     status: Mapped[str] = mapped_column(String(16), default="raw", index=True)
+    # 清洗配置指纹（ingest.clean_fingerprint）：同指纹的重复入库直接短路，
+    # 保留既有 chunks/mentions（防重复抓取作废抽取结果、重复烧 LLM）
+    clean_fingerprint: Mapped[str | None] = mapped_column(String(80))
 
     # 清洗结果（文档 5.2）
     cleaned_text: Mapped[str | None] = mapped_column(Text)
@@ -426,6 +429,8 @@ class EmailCode(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), index=True)
     code_hash: Mapped[str] = mapped_column(String(64))
+    # 连续验证失败次数（防爆破）：达到上限即作废该码，一次性消费
+    fail_count: Mapped[int] = mapped_column(default=0)
     # login
     purpose: Mapped[str] = mapped_column(String(16), default="login")
     ip_hash: Mapped[str | None] = mapped_column(String(64))

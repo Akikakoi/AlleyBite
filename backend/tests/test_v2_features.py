@@ -147,6 +147,22 @@ def test_email_login_wrong_code_422(client):
     assert resp.status_code == 422
 
 
+def test_email_code_brute_force_invalidates(client):
+    """连续失败达上限后码被作废：输对也拒绁（防先爆破后提交正确码）。"""
+    send = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
+    code = send.json()["data"]["dev_code"]
+    wrong = "000000" if code != "000000" else "999999"
+    for _ in range(5):  # 默认 email_code_max_attempts=5
+        resp = client.post(
+            "/api/v1/auth/email/login", json={"email": "user@example.com", "code": wrong}
+        )
+        assert resp.status_code == 422
+    resp = client.post(
+        "/api/v1/auth/email/login", json={"email": "user@example.com", "code": code}
+    )
+    assert resp.status_code == 422
+
+
 def test_email_login_links_existing_username_account(session, client):
     register_user(session, "老饕", "secret66", settings=app_main.settings)
     send = client.post("/api/v1/auth/email/send", json={"email": "other@example.com"})

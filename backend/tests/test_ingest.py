@@ -83,6 +83,63 @@ def test_ingest_is_idempotent(session):
     assert indices == sorted(set(indices))  # 无重复块
 
 
+def test_ingest_duplicate_preserves_extraction_result(session):
+    """重复入库（同内容+同清洗配置）不得作废已抽取的 mention（2026-10-16 修复）。"""
+    from app.db.models import Mention
+
+    row = ingest_raw_content(
+        session, source="forum", raw_text=LONG_TEXT, settings=make_settings()
+    )
+    session.commit()
+    chunk = session.scalar(
+        select(ContentChunk).where(ContentChunk.raw_content_id == row.id)
+    )
+    session.add(Mention(raw_content_id=row.id, chunk_id=chunk.id, shop_name_raw="明婷饭店"))
+    row.status = "extracted"
+    session.commit()
+
+    again = ingest_raw_content(
+        session, source="forum", raw_text=LONG_TEXT, settings=make_settings()
+    )
+    session.commit()
+
+    assert again.id == row.id
+    assert again.status == "extracted"  # 未被打回 cleaned（否则下游会重复烧 LLM）
+    assert session.scalar(select(func.count()).select_from(Mention)) == 1
+    assert session.scalar(select(func.count()).select_from(ContentChunk)) == row.chunk_count
+
+
+def test_ingest_rebuilds_when_clean_fingerprint_changes(session):
+    """清洗配置变化（指纹不同）时仍走重建，旧 mention 被替换。"""
+    from app.db.models import Mention
+
+    row = ingest_raw_content(
+        session,
+        source="forum",
+        raw_text=LONG_TEXT,
+        settings=make_settings(extract_max_tokens=64),
+    )
+    session.commit()
+    chunk = session.scalar(
+        select(ContentChunk).where(ContentChunk.raw_content_id == row.id)
+    )
+    session.add(Mention(raw_content_id=row.id, chunk_id=chunk.id, shop_name_raw="明婷饭店"))
+    row.status = "extracted"
+    session.commit()
+
+    again = ingest_raw_content(
+        session,
+        source="forum",
+        raw_text=LONG_TEXT,
+        settings=make_settings(extract_max_tokens=32),
+    )
+    session.commit()
+
+    assert again.id == row.id
+    assert again.status == "cleaned"  # 重建后待重抽
+    assert session.scalar(select(func.count()).select_from(Mention)) == 0
+
+
 def test_ingest_non_chinese_has_no_chunks(session):
     row = ingest_raw_content(
         session,

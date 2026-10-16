@@ -201,10 +201,18 @@ class UgcReviewRequest(BaseModel):
 
 
 def _client_ip(request: Request) -> str | None:
-    """取真实客户端 IP：反代场景优先 X-Forwarded-For 首段。"""
+    """取真实客户端 IP，用作限流/哈希键。
+
+    - 优先采信 X-Real-IP：由唯一反代 nginx 用 $remote_addr 覆写，不可伪造；
+    - X-Forwarded-For 取**末段**：首段可被客户端任意伪造（用它做限流键等于没限流），
+      末段由本层反代追加；api 容器不对外发布端口，直连场景仅限内网/本地联调；
+    - 若未来前面加公网 CDN/多层代理，需改用可信任的代注入头并同步调整。"""
+    real = (request.headers.get("x-real-ip") or "").strip()
+    if real:
+        return real
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip() or None
+        return forwarded.split(",")[-1].strip() or None
     return request.client.host if request.client else None
 
 
@@ -370,7 +378,8 @@ def metrics(session: Session = Depends(get_session)):
 
 
 @app.post("/api/v1/extract")
-def extract(req: ExtractRequest):
+def extract(req: ExtractRequest, _: AdminUser = Depends(require_writer)):
+    """抽取接口属运营/联调工具（消耗 LLM tokens），不对匿名开放。"""
     if req.preprocess:
         result = extractor.extract_document(
             req.text,
@@ -387,7 +396,12 @@ def extract(req: ExtractRequest):
 
 
 @app.post("/api/v1/ingest")
-def ingest(req: IngestRequest, session: Session = Depends(get_session)):
+def ingest(
+    req: IngestRequest,
+    request: Request,
+    admin: AdminUser = Depends(require_writer),
+    session: Session = Depends(get_session),
+):
     row = ingest_raw_content(
         session,
         source=req.source,
@@ -396,6 +410,15 @@ def ingest(req: IngestRequest, session: Session = Depends(get_session)):
         city_hint=req.city_hint,
         raw_title=req.raw_title,
         settings=settings,
+    )
+    _audit(
+        request,
+        session,
+        admin,
+        "ingest.create",
+        target_type="raw_content",
+        target_id=row.id,
+        after={"source": row.source, "city_hint": row.city_hint},
     )
     session.commit()
     return ok(
@@ -413,6 +436,8 @@ def ingest(req: IngestRequest, session: Session = Depends(get_session)):
 @app.post("/api/v1/raw-contents/{raw_content_id}/extract")
 def extract_raw_content_endpoint(
     raw_content_id: int,
+    request: Request,
+    admin: AdminUser = Depends(require_writer),
     apply_confidence_filter: bool = False,
     session: Session = Depends(get_session),
 ):
@@ -426,13 +451,24 @@ def extract_raw_content_endpoint(
         )
     except LookupError:
         raise HTTPException(status_code=404, detail="raw_content 不存在")
+    _audit(
+        request,
+        session,
+        admin,
+        "extract.run",
+        target_type="raw_content",
+        target_id=raw_content_id,
+        after={"status": result.status, "mention_count": result.mention_count},
+    )
     session.commit()
     return ok(result.model_dump())
 
 
 @app.get("/api/v1/scoring/shops")
 def scoring_shops(
-    city_hint: str | None = None, session: Session = Depends(get_session)
+    city_hint: str | None = None,
+    _: AdminUser = Depends(require_admin),
+    session: Session = Depends(get_session),
 ):
     """聚合 mention 计算店铺得分（文档 6；按 restaurant 实体聚合）。"""
     scores = collect_shop_scores(session, city_hint=city_hint, settings=settings)
@@ -441,10 +477,26 @@ def scoring_shops(
 
 @app.post("/api/v1/alignment/run")
 def alignment_run(
-    city_hint: str | None = None, session: Session = Depends(get_session)
+    request: Request,
+    admin: AdminUser = Depends(require_writer),
+    city_hint: str | None = None,
+    session: Session = Depends(get_session),
 ):
     """对未归并的 mention 执行实体对齐（文档 5.5）。"""
     result = align_mentions(session, city_hint=city_hint, settings=settings)
+    _audit(
+        request,
+        session,
+        admin,
+        "alignment.run",
+        target_type="city",
+        target_id=city_hint or "*",
+        after={
+            "restaurants_created": result.restaurants_created,
+            "mentions_aligned": result.mentions_aligned,
+            "mentions_review": result.mentions_review,
+        },
+    )
     session.commit()
     return ok(result.model_dump())
 
@@ -641,8 +693,9 @@ def auth_email_send(
     except EmailAuthError as exc:
         raise HTTPException(status_code=429 if "频繁" in str(exc) else 422, detail=str(exc))
     payload = {"mock": result["mock"], "ttl_minutes": settings.email_code_ttl_minutes}
-    if result["dev_code"]:
-        # 仅 mock（本地联调）返回验证码；生产配置发信账号后恒为 None
+    if result["dev_code"] and settings.debug:
+        # 仅本地联调（DEBUG=true 且 mock）返回验证码；生产恒不回响应（否则
+        # 生产漏配 SMTP 时任何人可直接拿码登录任意邮箱）
         payload["dev_code"] = result["dev_code"]
     return ok(payload)
 
@@ -723,7 +776,13 @@ def record_view_event(
     user: User | None = Depends(require_user_optional),
     session: Session = Depends(get_session),
 ):
-    """记录详情页浏览事件（V2.0 推荐依据）；未登录也接受（user 为 None）。"""
+    """记录详情页浏览事件（V2.0 推荐依据）；未登录也接受（user 为 None）。
+
+    先校验店铺存在：view_event.restaurant_id 有外键，脏 id 在 PostgreSQL
+    上会 IntegrityError（500）；本地 SQLite 开外键后同样如此，故显式 404。
+    """
+    if session.get(Restaurant, req.restaurant_id) is None:
+        raise HTTPException(status_code=404, detail="店铺不存在")
     record_view(session, req.restaurant_id, user.id if user else None)
     return ok({"recorded": True})
 
@@ -1238,7 +1297,10 @@ def share_rank(
 
 
 @app.get("/api/v1/alignment/reviews")
-def alignment_reviews(session: Session = Depends(get_session)):
+def alignment_reviews(
+    _: AdminUser = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
     return ok(
         [
             {
@@ -1289,12 +1351,26 @@ def rank(
 
 
 @app.post("/api/v1/rank/build")
-def rank_build(city: str, session: Session = Depends(get_session)):
+def rank_build(
+    city: str,
+    request: Request,
+    admin: AdminUser = Depends(require_writer),
+    session: Session = Depends(get_session),
+):
     """生成该城市榜单快照（文档 6.4 流水线第 4–5 步，供运营/定时任务触发）。"""
     try:
         snapshot = build_rank_snapshot(session, city, settings=settings, cache=rank_cache)
     except LookupError:
         raise HTTPException(status_code=404, detail="城市不存在")
+    _audit(
+        request,
+        session,
+        admin,
+        "rank.build",
+        target_type="city",
+        target_id=city,
+        after={"snapshot_id": snapshot.id, "total": len(snapshot.items or [])},
+    )
     session.commit()
     return ok(
         {
@@ -1310,7 +1386,12 @@ def rank_build(city: str, session: Session = Depends(get_session)):
 
 
 @app.post("/api/v1/jobs/run")
-def jobs_run(city: str | None = None, session: Session = Depends(get_session)):
+def jobs_run(
+    request: Request,
+    admin: AdminUser = Depends(require_writer),
+    city: str | None = None,
+    session: Session = Depends(get_session),
+):
     """触发城市流水线：抽取→对齐→打分→榜单快照（文档 4.4 / 6.4）。
 
     不传 city 则跑全部有内容的城市（供定时任务/运维调用）。
@@ -1360,7 +1441,12 @@ def admin_jobs(
 
 
 @app.get("/api/v1/raw-contents/{raw_content_id}")
-def read_raw_content(raw_content_id: int, session: Session = Depends(get_session)):
+def read_raw_content(
+    raw_content_id: int,
+    _: AdminUser = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """采集原文含全文内容，属运营数据，不对匿名开放。"""
     row = get_raw_content(session, raw_content_id)
     if row is None:
         raise HTTPException(status_code=404, detail="raw_content 不存在")

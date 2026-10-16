@@ -166,6 +166,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""                     # 发信邮箱授权码（非登录密码）
     smtp_from_name: str = "苍蝇馆子美食发现器"   # 发件人显示名
     email_code_ttl_minutes: int = 10            # 验证码有效期（分钟）
+    email_code_max_attempts: int = 5            # 单个验证码最大验证失败次数，达上限即作废（防爆破）
     email_send_per_mailbox_hourly: int = 5      # 同邮箱每小时最多发送条数
     email_send_per_ip_hourly: int = 20          # 同 IP 每小时最多发送条数
 

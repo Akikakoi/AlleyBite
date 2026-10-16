@@ -197,6 +197,41 @@ def test_submit_feedback_endpoint_rate_limited(client):
     )
 
 
+def _request_with(headers: dict[str, str] | None = None, client_addr=("10.0.0.9", 50000)):
+    """构造裸 Request 用于 _client_ip 单测（不走 ASGI）。"""
+    from starlette.requests import Request as StarletteRequest
+
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/",
+        "raw_path": b"/",
+        "query_string": b"",
+        "root_path": "",
+        "server": ("testserver", 80),
+        "client": client_addr,
+        "headers": [
+            (key.lower().encode("ascii"), value.encode("ascii"))
+            for key, value in (headers or {}).items()
+        ],
+    }
+    return StarletteRequest(scope)
+
+
+def test_client_ip_takes_xff_last_segment_and_real_ip():
+    """限流键不可取 XFF 首段（客户端可伪造），应取反代追加的末段；X-Real-IP 优先。"""
+    from app.main import _client_ip
+
+    assert _client_ip(_request_with({"X-Forwarded-For": "1.1.1.1, 2.2.2.2"})) == "2.2.2.2"
+    assert (
+        _client_ip(_request_with({"X-Real-IP": "3.3.3.3", "X-Forwarded-For": "1.1.1.1"}))
+        == "3.3.3.3"
+    )
+    assert _client_ip(_request_with({})) == "10.0.0.9"
+
+
 def _admin_headers(client, session) -> dict:
     """走真实登录流程取后台令牌（口令迭代已在 conftest 降低）。"""
     set_admin_password(session, "op", "pw", settings=app_main.settings)

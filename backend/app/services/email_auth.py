@@ -136,7 +136,12 @@ def _dispatch_via_smtp(settings: Settings, email: str, code: str) -> None:
 def verify_email_code(
     session: Session, email: str, code: str, *, settings: Settings
 ) -> None:
-    """校验并消费验证码；无效/过期/已用统一抛 EmailAuthError。"""
+    """校验并消费验证码；无效/过期/已用统一抛 EmailAuthError。
+
+    防爆破：6 位码空间仅 10^6，若不限制验证失败次数，10 分钟有效期内
+    足以在线枚举。故对同邮箱最近一条有效码累计失败次数，达
+    EMAIL_CODE_MAX_ATTEMPTS 即作废；之后即使输对也按已消费拒绁。
+    """
     now = datetime.now(timezone.utc)
     email = normalize_email(email)
     row = session.scalar(
@@ -151,8 +156,34 @@ def verify_email_code(
         .order_by(EmailCode.id.desc())
     )
     if row is None:
+        _record_failed_attempt(session, email, now, settings)
+        raise EmailAuthError("验证码错误或已过期")
+    if (row.fail_count or 0) >= settings.email_code_max_attempts:
+        row.used_at = now
+        session.commit()
         raise EmailAuthError("验证码错误或已过期")
     row.used_at = now
+    session.commit()
+
+
+def _record_failed_attempt(
+    session: Session, email: str, now: datetime, settings: Settings
+) -> None:
+    """该邮箱最近一条未消费有效码的失败次数 +1；达上限即作废（一次性防爆破）。"""
+    latest = session.scalar(
+        select(EmailCode)
+        .where(
+            EmailCode.email == email,
+            EmailCode.used_at.is_(None),
+            EmailCode.expires_at > now,
+        )
+        .order_by(EmailCode.id.desc())
+    )
+    if latest is None:
+        return
+    latest.fail_count = (latest.fail_count or 0) + 1
+    if latest.fail_count >= settings.email_code_max_attempts:
+        latest.used_at = now
     session.commit()
 
 
