@@ -1,7 +1,7 @@
 <template>
   <div class="page myposts">
     <header class="myposts__bar">
-      <button class="myposts__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="myposts__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <div class="myposts__title">
         <h1 class="page-title">我的打卡</h1>
         <p class="text-sub">发布后经审核展示</p>
@@ -27,7 +27,7 @@
             </span>
             <span class="text-sub">{{ formatDate(item.created_at) }}</span>
           </p>
-          <p class="myposts__shop" @click="openDetail(item)">
+          <p class="myposts__shop press-feedback" @click="openDetail(item)">
             {{ item.restaurant_name || '店铺详情' }} ›
           </p>
           <p class="myposts__content">{{ item.content }}</p>
@@ -166,6 +166,12 @@ onMounted(load)
   color: var(--color-primary);
   font-weight: 600;
   cursor: pointer;
+  transition: opacity var(--dur-ui) var(--ease-out);
+}
+
+/* 主色文字链接：hover 用透明度弱化（挂 hover-tint 会出现整行色块） */
+.myposts__shop:hover {
+  opacity: 0.72;
 }
 
 .myposts__content {

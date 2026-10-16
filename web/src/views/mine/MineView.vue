@@ -1,7 +1,7 @@
 <template>
   <div class="page mine">
     <header class="mine__bar">
-      <button class="mine__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="mine__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <span class="text-sub">我的</span>
     </header>
 
@@ -14,13 +14,13 @@
         </div>
       </section>
 
-      <section class="card mine__entry" @click="router.push('/mine/favorites')">
+      <section class="card mine__entry press-feedback hover-tint" @click="router.push('/mine/favorites')">
         <span class="mine__entry-icon">★</span>
         <span class="mine__entry-label">我的收藏</span>
         <span class="mine__entry-arrow">›</span>
       </section>
 
-      <section class="card mine__entry" @click="router.push('/mine/posts')">
+      <section class="card mine__entry press-feedback hover-tint" @click="router.push('/mine/posts')">
         <span class="mine__entry-icon">✎</span>
         <span class="mine__entry-label">我的打卡</span>
         <span class="mine__entry-arrow">›</span>

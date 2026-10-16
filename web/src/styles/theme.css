@@ -26,10 +26,11 @@
   --shadow-card: 0 6px 20px rgba(38, 34, 31, 0.08);
   --page-pad: 16px;
 
-  /* 动效 token（AUDIT 规范值）：UI 动画一律 <300ms，按压反馈 160ms 专档 */
+  /* 动效 token（AUDIT 规范值）：UI 动画一律 <300ms，按压反馈 160ms 专档，退场 150ms 专档（快进慢出） */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --dur-press: 160ms;
   --dur-ui: 200ms;
+  --dur-exit: 150ms;
 }
 
 * {

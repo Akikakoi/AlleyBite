@@ -284,8 +284,8 @@ onBeforeUnmount(() => {
 
 .popup-rise-leave-active {
   transition:
-    opacity 150ms var(--ease-out),
-    transform 150ms var(--ease-out);
+    opacity var(--dur-exit) var(--ease-out),
+    transform var(--dur-exit) var(--ease-out);
 }
 
 .popup-rise-leave-to {

@@ -59,7 +59,7 @@
       <nav v-if="totalPages > 1" class="pager" aria-label="榜单分页">
         <button
           type="button"
-          class="pager__item pager__nav"
+          class="pager__item pager__nav press-feedback"
           :disabled="currentPage === 1"
           @click="goPage(currentPage - 1)"
         >‹</button>
@@ -69,13 +69,13 @@
             v-else
             type="button"
             class="pager__item"
-            :class="{ 'pager__item--active': p === currentPage }"
+            :class="{ 'pager__item--active': p === currentPage, 'press-feedback': p !== currentPage }"
             @click="goPage(p as number)"
           >{{ p }}</button>
         </template>
         <button
           type="button"
-          class="pager__item pager__nav"
+          class="pager__item pager__nav press-feedback"
           :disabled="currentPage === totalPages"
           @click="goPage(currentPage + 1)"
         >›</button>
@@ -353,10 +353,13 @@ function shareUrl(): string {
   line-height: 34px;
   text-align: center;
   cursor: pointer;
+  /* transform 必须写在 scoped 声明里：scoped 样式注入晚于全局 .press-feedback，
+     平局特异度下本规则的 transition 会整条覆盖全局类，漏写则按压缩放瞬跳 */
   transition:
-    background-color var(--dur-ui) ease,
-    color var(--dur-ui) ease,
-    border-color var(--dur-ui) ease;
+    transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out),
+    border-color var(--dur-ui) var(--ease-out);
 }
 
 .pager__item:hover:not(.pager__item--active):not(:disabled):not(.pager__gap) {

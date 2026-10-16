@@ -276,7 +276,7 @@
             v-for="option in FEEDBACK_TYPES"
             :key="option.value"
             type="button"
-            class="feedback__type press-feedback"
+            class="feedback__type press-feedback hover-tint"
             :class="{ 'feedback__type--on': form.type === option.value }"
             @click="form.type = option.value"
           >
@@ -815,11 +815,8 @@ onMounted(load)
   color: var(--color-secondary);
   font-size: 13px;
   cursor: pointer;
-  transition:
-    transform var(--dur-press) var(--ease-out),
-    background-color var(--dur-ui) ease,
-    border-color var(--dur-ui) ease,
-    color var(--dur-ui) ease;
+  /* 过渡与 hover 态由全局 .hover-tint 提供（曲线/时长走 token）；
+     此处不再声明 transition——scoped 注入晚于全局类，平局特异度会整条覆盖 */
 }
 
 .feedback__type--on {

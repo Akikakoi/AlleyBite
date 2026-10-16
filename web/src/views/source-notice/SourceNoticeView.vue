@@ -1,7 +1,7 @@
 <template>
   <div class="page source">
     <header class="source__bar">
-      <button class="source__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="source__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <span class="text-sub">来源提示</span>
       <span class="source__bar-spacer" />
     </header>

@@ -1,7 +1,7 @@
 <template>
   <div class="page login">
     <header class="login__bar">
-      <button class="login__back" aria-label="返回" @click="router.back()">‹</button>
+      <button class="login__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <span class="text-sub">{{ titleText }}</span>
     </header>
 
