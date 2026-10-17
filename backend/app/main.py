@@ -88,6 +88,7 @@ from .services.metrics import (
     add_http_metrics,
     render_metrics,
 )
+from .services.login_throttle import LoginThrottle, LoginThrottled
 
 settings = get_settings()
 
@@ -123,6 +124,12 @@ add_http_metrics(app)
 
 extractor = Extractor(settings)
 rank_cache = make_rank_cache(settings)
+
+# 登录失败限速（进程内）：防在线爆破（2026-10-16）；成功登录即清零
+_login_throttle = LoginThrottle(
+    max_failures=settings.login_max_failures,
+    lockout_seconds=settings.login_lockout_minutes * 60,
+)
 
 
 def ok(data):
@@ -611,12 +618,24 @@ def auth_register(req: AuthRequest, session: Session = Depends(get_session)):
 
 
 @app.post("/api/v1/auth/login")
-def auth_login(req: AuthRequest, session: Session = Depends(get_session)):
-    """C 端登录（文档 10.2）：口令换取用户态令牌，与后台令牌隔离。"""
+def auth_login(
+    req: AuthRequest, request: Request, session: Session = Depends(get_session)
+):
+    """C 端登录（文档 10.2）：口令换取用户态令牌，与后台令牌隔离。
+
+    同 用户名+IP 连续失败达 LOGIN_MAX_FAILURES 即临时锁定（防在线爆破）。
+    """
+    throttle_key = _login_throttle.key("user", req.username, _client_ip(request))
+    try:
+        _login_throttle.check(throttle_key)
+    except LoginThrottled as exc:
+        raise HTTPException(status_code=429, detail=f"尝试过于频繁，请 {exc.args[0]} 秒后再试")
     try:
         user = authenticate_user(session, req.username, req.password)
     except UserAuthError as exc:
+        _login_throttle.record_failure(throttle_key)
         raise HTTPException(status_code=401, detail=str(exc))
+    _login_throttle.reset(throttle_key)
     user.last_login_at = datetime.now(timezone.utc)
     session.commit()
     return ok(_auth_payload(user, settings))
@@ -841,11 +860,21 @@ def admin_ugc_review(
 def admin_login(
     req: AdminLoginRequest, request: Request, session: Session = Depends(get_session)
 ):
-    """管理后台登录（文档 9.5）：口令换独立令牌，与 C 端鉴权隔离。"""
+    """管理后台登录（文档 9.5）：口令换独立令牌，与 C 端鉴权隔离。
+
+    同 用户名+IP 连续失败达 LOGIN_MAX_FAILURES 即临时锁定（防在线爆破）。
+    """
+    throttle_key = _login_throttle.key("admin", req.username, _client_ip(request))
+    try:
+        _login_throttle.check(throttle_key)
+    except LoginThrottled as exc:
+        raise HTTPException(status_code=429, detail=f"尝试过于频繁，请 {exc.args[0]} 秒后再试")
     try:
         user = authenticate(session, req.username, req.password)
     except AdminAuthError as exc:
+        _login_throttle.record_failure(throttle_key)
         raise HTTPException(status_code=401, detail=str(exc))
+    _login_throttle.reset(throttle_key)
 
     token, expires_at = issue_token(user, settings=settings)
     user.last_login_at = datetime.now(timezone.utc)

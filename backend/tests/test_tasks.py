@@ -25,6 +25,7 @@ def test_beat_schedule_full_plan():
         "crawl-text-interval",
         "pipeline-daily",
         "liveness-daily",
+        "snapshot-purge-daily",
         "quality-weekly",
     }
     assert str(schedule["refresh-poi-daily"]["schedule"]) == "<crontab: 0 3 * * * (m/h/dM/MY/d)>"
@@ -34,6 +35,7 @@ def test_beat_schedule_full_plan():
     assert str(schedule["pipeline-daily"]["schedule"]) == "<crontab: 0 5 * * * (m/h/dM/MY/d)>"
     # 方向四第 3 批：状态机排在 POI 刷新之后（max(amap_hour, liveness_hour):30）
     assert str(schedule["liveness-daily"]["schedule"]) == "<crontab: 30 4 * * * (m/h/dM/MY/d)>"
+    assert str(schedule["snapshot-purge-daily"]["schedule"]) == "<crontab: 15 4 * * * (m/h/dM/MY/d)>"
     assert str(schedule["quality-weekly"]["schedule"]) == "<crontab: 0 6 * * 1 (m/h/dM/MY/d)>"
 
 
@@ -46,6 +48,7 @@ def test_beat_schedule_without_weekly_and_disabled():
         "crawl-text-interval",
         "pipeline-daily",
         "liveness-daily",
+        "snapshot-purge-daily",
     }
 
     assert (

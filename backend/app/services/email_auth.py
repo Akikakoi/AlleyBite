@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import random
 import re
 import secrets
 import smtplib
@@ -86,7 +85,7 @@ def send_email_code(
         if ip_count >= settings.email_send_per_ip_hourly:
             raise EmailAuthError("发送过于频繁，请稍后再试")
 
-    code = f"{random.randint(0, 999999):06d}"
+    code = f"{secrets.randbelow(1000000):06d}"
     row = EmailCode(
         email=email,
         code_hash=_code_hash(email, code, settings.feedback_ip_salt),

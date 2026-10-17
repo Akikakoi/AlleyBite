@@ -154,6 +154,10 @@ class Settings(BaseSettings):
     admin_token_ttl_minutes: int = 120          # 令牌有效期（分钟）
     admin_password_iterations: int = 200_000    # PBKDF2 迭代次数
 
+    # 登录失败锁定（进程内，2026-10-16）：同 用户名+IP 窗口内连续失败即临时锁定
+    login_max_failures: int = 5                 # 窗口内最大失败次数
+    login_lockout_minutes: int = 15             # 锁定时长（分钟）
+
     # C 端账号（文档 10.2 / 12 章 V2.0）：用户名口令注册登录换 JWT 式令牌
     user_token_secret: str = ""                 # 令牌签名密钥；留空回退 feedback_ip_salt（受众不同，不会与后台令牌串签）
     user_token_ttl_minutes: int = 10_080        # 令牌有效期（分钟），默认 7 天

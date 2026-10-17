@@ -32,7 +32,14 @@ from celery.schedules import crontab
 
 ROOT = Path(__file__).resolve().parents[1]
 
-_TASK_NAMES = ("tasks.refresh_poi", "tasks.crawl_text", "tasks.run_pipeline", "tasks.quality_report")
+_TASK_NAMES = (
+    "tasks.refresh_poi",
+    "tasks.crawl_text",
+    "tasks.run_pipeline",
+    "tasks.evaluate_liveness",
+    "tasks.purge_snapshots",
+    "tasks.quality_report",
+)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -81,6 +88,7 @@ def _build_beat_schedule(
     text_interval_hours: int,
     pipeline_hour: int,
     liveness_hour: int = 4,
+    purge_hour: int = 4,
     weekly_report: bool,
 ) -> dict:
     """beat 计划（纯函数，便于测试）。时间均为 Asia/Shanghai 本地时区。"""
@@ -104,6 +112,11 @@ def _build_beat_schedule(
             "task": "tasks.evaluate_liveness",
             "schedule": crontab(hour=max(amap_hour, liveness_hour), minute=30),
         },
+        # 快照 TTL 清理（此前 purge_expired 无生产调用点，磁盘只增不减）
+        "snapshot-purge-daily": {
+            "task": "tasks.purge_snapshots",
+            "schedule": crontab(hour=purge_hour, minute=15),
+        },
     }
     if weekly_report:
         schedule["quality-weekly"] = {
@@ -119,6 +132,7 @@ app.conf.beat_schedule = _build_beat_schedule(
     text_interval_hours=_env_int("SCHEDULE_TEXT_INTERVAL_HOURS", 6),
     pipeline_hour=_env_int("SCHEDULE_PIPELINE_HOUR", 5),
     liveness_hour=_env_int("SCHEDULE_LIVENESS_HOUR", 4),
+    purge_hour=_env_int("SCHEDULE_PURGE_HOUR", 4),
     weekly_report=True,
 )
 
@@ -187,6 +201,20 @@ def run_pipeline() -> str:
 def evaluate_liveness() -> str:
     """方向四第 3 批：推进存活状态机（miss 阈值 → suspect/closed）。"""
     return _run_script("evaluate_liveness.py", [], "存活监测状态机")
+
+
+@app.task(name="tasks.purge_snapshots")
+def purge_snapshots() -> str:
+    """每日清理过期页面快照（TTL 见 CRAWL_SNAPSHOT_TTL_DAYS，纯文件系统操作）。"""
+    from app.collectors.snapshots import SnapshotStore
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    removed = SnapshotStore(
+        settings.snapshot_dir, settings.crawl_snapshot_ttl_days
+    ).purge_expired()
+    print(f"[celery] 清理过期快照 {removed} 个", flush=True)
+    return f"清理过期快照 {removed} 个"
 
 
 @app.task(name="tasks.quality_report")

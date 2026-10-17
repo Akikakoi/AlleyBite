@@ -59,7 +59,12 @@ class RankCache:
             raw = self._client.get(key)
         except Exception:
             return None
-        return json.loads(raw) if raw else None
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return None  # 缓存值损坏时按未命中处理，回源重建，不让单条脏数据打挂接口
 
     def set(self, key: str, payload: dict) -> None:
         if self._client is None:
