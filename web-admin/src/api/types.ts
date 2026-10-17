@@ -96,11 +96,13 @@ export interface CrawlOverview {
 }
 
 export interface CrawlRunResult {
-  job_id: number
+  job_id: number | null
   job_type: string
   status: string
   stats: Record<string, unknown> | null
   error: string | null
+  /** true = 已投递 Celery 后台执行（CRAWL_RUN_ASYNC=true），结果稍后在任务列表查看 */
+  dispatched?: boolean
 }
 
 export interface CrawlRunPayload {

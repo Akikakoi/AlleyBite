@@ -91,3 +91,56 @@ def test_ops_endpoints_accept_admin_and_write_audit(client, session):
     assert client.get("/api/v1/scoring/shops", headers=headers).status_code == 200
     assert client.get("/api/v1/alignment/reviews", headers=headers).status_code == 200
     assert client.get("/api/v1/raw-contents/9999", headers=headers).status_code == 404
+
+
+def test_crawl_run_sync_fallback(client, session):
+    """默认（未开 CRAWL_RUN_ASYNC）同步执行并返回 job 结果。"""
+    headers = _admin_headers(client, session)
+    resp = client.post("/api/v1/admin/crawl/run", json={}, headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["dispatched"] is False
+    assert body["job_id"] is not None
+
+
+def test_crawl_run_async_dispatch(client, session, monkeypatch):
+    """CRAWL_RUN_ASYNC=true 时投递 Celery 并立即返回 queued。"""
+    dispatched: list[tuple[str, dict]] = []
+    monkeypatch.setattr(app_main.settings, "crawl_run_async", True)
+    monkeypatch.setattr(
+        app_main, "_dispatch_celery", lambda name, **kw: dispatched.append((name, kw))
+    )
+    headers = _admin_headers(client, session)
+
+    resp = client.post(
+        "/api/v1/admin/crawl/run",
+        json={"city": "成都", "mode": "incremental"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["dispatched"] is True
+    assert body["status"] == "queued"
+    assert body["job_id"] is None
+    assert dispatched == [
+        (
+            "crawl_adhoc",
+            {"city": "成都", "sources": None, "mode": "incremental", "force": False},
+        )
+    ]
+
+
+def test_jobs_run_async_dispatch(client, session, monkeypatch):
+    dispatched: list[tuple[str, dict]] = []
+    monkeypatch.setattr(app_main.settings, "crawl_run_async", True)
+    monkeypatch.setattr(
+        app_main, "_dispatch_celery", lambda name, **kw: dispatched.append((name, kw))
+    )
+    headers = _admin_headers(client, session)
+
+    resp = client.post("/api/v1/jobs/run?city=%E6%88%90%E9%83%BD", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body[0]["dispatched"] is True
+    assert body[0]["status"] == "queued"
+    assert dispatched == [("run_pipeline", {"city": "成都"})]

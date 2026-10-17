@@ -158,6 +158,10 @@ class Settings(BaseSettings):
     login_max_failures: int = 5                 # 窗口内最大失败次数
     login_lockout_minutes: int = 15             # 锁定时长（分钟）
 
+    # 手动触发采集/跑批异步化（2026-10-17）：true 时投递 Celery 后台执行，
+    # 立即返回 queued；默认 false（本地无 broker 时同步执行，行为不变）
+    crawl_run_async: bool = False
+
     # C 端账号（文档 10.2 / 12 章 V2.0）：用户名口令注册登录换 JWT 式令牌
     user_token_secret: str = ""                 # 令牌签名密钥；留空回退 feedback_ip_salt（受众不同，不会与后台令牌串签）
     user_token_ttl_minutes: int = 10_080        # 令牌有效期（分钟），默认 7 天

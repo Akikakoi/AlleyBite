@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _TASK_NAMES = (
     "tasks.refresh_poi",
     "tasks.crawl_text",
+    "tasks.crawl_adhoc",
     "tasks.run_pipeline",
     "tasks.evaluate_liveness",
     "tasks.purge_snapshots",
@@ -191,10 +192,29 @@ def crawl_text() -> str:
     )
 
 
+@app.task(name="tasks.crawl_adhoc")
+def crawl_adhoc(
+    city: str | None = None,
+    sources: list[str] | None = None,
+    mode: str = "incremental",
+    force: bool = False,
+) -> str:
+    """管理后台手动触发的采集跑批（异步执行，job_run 由脚本落库后可查）。"""
+    args: list[str] = ["--mode", mode]
+    if city:
+        args += ["--city", city]
+    if sources:
+        args += ["--sources", ",".join(sources)]
+    if force:
+        args.append("--force")
+    return _run_script("run_crawl.py", args, "手动采集跑批")
+
+
 @app.task(name="tasks.run_pipeline")
-def run_pipeline() -> str:
-    """清洗 → 抽取 → 对齐 → 打分 → 榜单快照（全部有内容的城市）。"""
-    return _run_script("run_pipeline.py", [], "抽取→对齐→打分→榜单")
+def run_pipeline(city: str | None = None) -> str:
+    """清洗 → 抽取 → 对齐 → 打分 → 榜单快照（缺省全部有内容的城市）。"""
+    args = [city] if city else []
+    return _run_script("run_pipeline.py", args, "抽取→对齐→打分→榜单")
 
 
 @app.task(name="tasks.evaluate_liveness")

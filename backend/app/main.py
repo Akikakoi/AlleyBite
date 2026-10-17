@@ -132,6 +132,13 @@ _login_throttle = LoginThrottle(
 )
 
 
+def _dispatch_celery(task_name: str, **kwargs) -> None:
+    """向 Celery 投递任务；集中一处便于测试 monkeypatch。"""
+    from . import tasks
+
+    getattr(tasks, task_name).delay(**kwargs)
+
+
 def ok(data):
     return {"code": 0, "message": "ok", "data": data}
 
@@ -1100,7 +1107,46 @@ def admin_crawl_run(
     admin: AdminUser = Depends(require_writer),
     session: Session = Depends(get_session),
 ):
-    """手动触发采集跑批（文档 9.5）；同步执行并落 job_run。"""
+    """手动触发采集跑批（文档 9.5）。
+
+    CRAWL_RUN_ASYNC=true（生产）投递 Celery 后台执行，立即返回 queued，
+    job_run 由 worker 落库（GET /api/v1/admin/crawl 可查）；
+    默认 false（本地无 broker）同步执行并直接返回结果。
+    """
+    if settings.crawl_run_async:
+        _dispatch_celery(
+            "crawl_adhoc",
+            city=req.city,
+            sources=req.sources,
+            mode=req.mode,
+            force=req.force,
+        )
+        _audit(
+            request,
+            session,
+            admin,
+            "crawl.run",
+            target_type="job_run",
+            target_id=None,
+            after={
+                "city": req.city,
+                "sources": req.sources,
+                "mode": req.mode,
+                "dispatched": "celery",
+            },
+        )
+        session.commit()
+        return ok(
+            {
+                "job_id": None,
+                "job_type": "crawl",
+                "status": "queued",
+                "stats": {},
+                "error": None,
+                "dispatched": True,
+            }
+        )
+
     job = run_crawl(
         session,
         settings,
@@ -1131,6 +1177,7 @@ def admin_crawl_run(
             "status": job.status,
             "stats": job.stats or {},
             "error": job.error,
+            "dispatched": False,
         }
     )
 
@@ -1426,10 +1473,48 @@ def jobs_run(
     不传 city 则跑全部有内容的城市（供定时任务/运维调用）。
     失败会写入 job_run（GET /api/v1/admin/jobs 可查），并返回 500。
     """
+    if settings.crawl_run_async:
+        _dispatch_celery("run_pipeline", city=city)
+        _audit(
+            request,
+            session,
+            admin,
+            "jobs.run",
+            target_type="city",
+            target_id=city or "*",
+            after={"dispatched": "celery", "city": city},
+        )
+        session.commit()
+        return ok(
+            [
+                {
+                    "job_id": None,
+                    "job_type": "rank",
+                    "status": "queued",
+                    "stats": {},
+                    "error": None,
+                    "dispatched": True,
+                }
+            ]
+        )
+
     if city:
         jobs = [run_city_pipeline(session, city, settings=settings, cache=rank_cache)]
     else:
         jobs = run_all_cities(session, settings=settings, cache=rank_cache)
+    _audit(
+        request,
+        session,
+        admin,
+        "jobs.run",
+        target_type="city",
+        target_id=city or "*",
+        after={
+            "job_ids": [j.id for j in jobs],
+            "status": [j.status for j in jobs],
+        },
+    )
+    session.commit()
     return ok(
         [
             {

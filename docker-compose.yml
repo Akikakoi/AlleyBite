@@ -52,6 +52,8 @@ x-api-environment: &api-environment
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
   ADMIN_TOKEN_SECRET: ${ADMIN_TOKEN_SECRET:-}
   ADMIN_TOKEN_TTL_MINUTES: ${ADMIN_TOKEN_TTL_MINUTES:-120}
+  # 手动触发采集/跑批异步化：true 投递 Celery 后台执行（api/worker/beat 共享环境）
+  CRAWL_RUN_ASYNC: ${CRAWL_RUN_ASYNC:-true}
 
 services:
   postgres:

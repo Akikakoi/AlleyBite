@@ -61,7 +61,11 @@
         :type="runResult.error ? 'error' : 'success'"
         show-icon
         :closable="false"
-        :title="`任务 #${runResult.job_id} ${runResult.job_type} 状态：${runResult.status}`"
+        :title="
+          runResult.job_id != null
+            ? `任务 #${runResult.job_id} ${runResult.job_type} 状态：${runResult.status}`
+            : `采集任务已投递后台执行（状态：${runResult.status}），完成后在下方任务列表查看结果`
+        "
       >
         <div v-if="runResult.error" class="ab-run-result__error">{{ runResult.error }}</div>
         <pre class="ab-json">{{ prettyJson(runResult.stats) }}</pre>
@@ -166,7 +170,7 @@ async function submit() {
   const forceText = form.force ? '，忽略夜间暂停' : ''
   try {
     await ElMessageBox.confirm(
-      `将以「${modeText}」模式采集：${cityText}，数据源：${sourceText}${forceText}。该任务为同步长任务，可能耗时数分钟，确认触发？`,
+      `将以「${modeText}」模式采集：${cityText}，数据源：${sourceText}${forceText}。任务将投递后台执行（本地未配置 broker 时同步执行），完成后在任务列表查看结果。确认触发？`,
       '触发采集确认',
       { type: 'warning', confirmButtonText: '确认触发', cancelButtonText: '取消' },
     )
@@ -182,7 +186,11 @@ async function submit() {
       mode: form.mode,
       force: form.force,
     })
-    ElMessage.success(`采集任务 #${runResult.value.job_id} 已结束`)
+    if (runResult.value.dispatched) {
+      ElMessage.success('采集任务已投递后台执行，完成后可在任务列表查看结果')
+    } else {
+      ElMessage.success(`采集任务 #${runResult.value.job_id} 已结束`)
+    }
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
