@@ -283,6 +283,7 @@ def _apply_filters(
     area: str | None,
     days: int | None = None,
     now: datetime | None = None,
+    eligible_ids: set[int] | None = None,
 ) -> list[dict]:
     result = items
     if cuisine:
@@ -300,12 +301,17 @@ def _apply_filters(
     if days:
         # 时间维度（文档 2.2 V1.1）：仅保留快照生成时点前 N 天内被提及过的店，
         # 次序不变、名次重排。以快照生成时间为基准，保证结果确定、缓存一致。
-        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
-        result = [
-            i
-            for i in result
-            if (t := _parse_item_date(i.get("last_mentioned_at"))) is not None and t >= cutoff
-        ]
+        # 方向四 2.3 顺带收益：走 restaurant.last_mentioned_at 索引列（归并时增量维护），
+        # 替代快照条目的固化值；eligible_ids 为 None 时回退旧 JSON 口径（防御分支）。
+        if eligible_ids is not None:
+            result = [i for i in result if i.get("restaurant_id") in eligible_ids]
+        else:
+            cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
+            result = [
+                i
+                for i in result
+                if (t := _parse_item_date(i.get("last_mentioned_at"))) is not None and t >= cutoff
+            ]
         result = [{**i, "rank": rank} for rank, i in enumerate(result, start=1)]
     return result
 
@@ -342,6 +348,25 @@ def get_rank(
     if snapshot is None:
         return None
 
+    generated = to_utc(snapshot.generated_at)
+    eligible_ids: set[int] | None = None
+    if days:
+        # 方向四 2.3 顺带收益：days 过滤走 last_mentioned_at 索引列（归并挂靠时
+        # 增量维护），替代快照条目固化值；列缺失（无提及）的店本就不在窗口内。
+        # cutoff 与旧口径同基准（快照生成时刻），保证结果确定、缓存一致。
+        city = session.scalar(select(City).where(City.name == city_hint))
+        if city is not None:
+            cutoff = generated - timedelta(days=days)
+            eligible_ids = set(
+                session.scalars(
+                    select(Restaurant.id).where(
+                        Restaurant.city_id == city.id,
+                        Restaurant.status == "active",
+                        Restaurant.last_mentioned_at >= cutoff,
+                    )
+                ).all()
+            )
+
     items = _apply_filters(
         list(snapshot.items or []),
         cuisine=cuisine,
@@ -349,7 +374,8 @@ def get_rank(
         price_max=price_max,
         area=area,
         days=days,
-        now=to_utc(snapshot.generated_at),
+        now=generated,
+        eligible_ids=eligible_ids,
     )
     total = len(items)
     start = max(0, (page - 1) * page_size)

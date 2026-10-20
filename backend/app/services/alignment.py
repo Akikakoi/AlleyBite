@@ -10,6 +10,8 @@
       故综合分暂只用「名称相似度 + 地址 token 重合度」。
 """
 
+from datetime import timezone
+
 from pydantic import BaseModel
 
 from sqlalchemy import select
@@ -94,6 +96,27 @@ def _backfill_restaurant(restaurant: Restaurant, mention: MentionRow) -> None:
         restaurant.cuisine = mention.cuisine
     if restaurant.avg_price is None and mention.avg_price is not None:
         restaurant.avg_price = mention.avg_price
+    _touch_last_mentioned(restaurant, mention)
+
+
+def _touch_last_mentioned(restaurant: Restaurant, mention: MentionRow) -> None:
+    """挂靠时增量维护 last_mentioned_at（方向四 2.3 顺带收益的配套增量）。
+
+    口径与 liveness 回填一致：coalesce(published_at, crawled_at)；
+    只在更新时间晚于现值时前移，防乱序 mention 回拨。
+    """
+    raw = mention.raw_content
+    ts = (raw.published_at or raw.crawled_at) if raw is not None else None
+    if ts is None:
+        return
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    current = restaurant.last_mentioned_at
+    if current is not None and current.tzinfo is None:
+        # SQLite 存取不带时区，按 UTC 归一后再比较
+        current = current.replace(tzinfo=timezone.utc)
+    if current is None or ts > current:
+        restaurant.last_mentioned_at = ts
 
 
 def _is_branch_context(restaurants: list[Restaurant], target: Restaurant) -> bool:
@@ -225,6 +248,7 @@ def align_mentions(
                 )
                 session.add(restaurant)
                 session.flush()
+                _touch_last_mentioned(restaurant, mention)
                 mention.restaurant_id = restaurant.id
                 restaurants.append(restaurant)
                 by_id[restaurant.id] = restaurant
@@ -293,6 +317,7 @@ def confirm_review(
 
     mention.restaurant_id = target_id
     review.status = "confirmed"
+    _touch_last_mentioned(restaurant, mention)
     _add_alias(
         restaurant,
         mention.shop_name_raw,
@@ -335,6 +360,7 @@ def merge_restaurants(
         select(MentionRow).where(MentionRow.restaurant_id == source.id)
     ).all():
         mention.restaurant_id = target.id
+        _touch_last_mentioned(target, mention)
         moved += 1
 
     target_aliases = {a.alias_norm for a in target.aliases}
