@@ -204,3 +204,110 @@ def test_restaurant_backfilled_from_mention(session):
     session.refresh(restaurant)
     assert restaurant.cuisine == "川菜"
     assert restaurant.avg_price == 65
+
+
+# --- 方向五第 2 批：多候选守卫 / 疑似分店标注 / is_chain 回填 -----------------
+
+def _add_restaurant(session, *, name, city="成都", is_chain=False):
+    from app.db.models import City
+
+    city_row = session.query(City).filter_by(name=city).one_or_none()
+    if city_row is None:
+        city_row = City(name=city)
+        session.add(city_row)
+        session.flush()
+    row = Restaurant(
+        city_id=city_row.id,
+        name=name,
+        name_norm=normalize_shop_name(name),
+        is_chain=is_chain,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def test_pure_branch_suffix_matches_at_full_similarity():
+    # 纯分店后缀 = 同一实体强信号；含定位词的总店不算（"全球"不是纯后缀）
+    assert name_similarity("小毛肚老火锅", "小毛肚老火锅总店") == 0.9  # 包含规则仍在
+    assert normalize_shop_name("小毛肚老火锅总店") == "小毛肚老火锅"  # norm 层已剥
+    assert normalize_shop_name("小龙坎火锅全球总店") == "小龙坎火锅全球"
+
+
+def test_brand_stem_groups_numbered_branches():
+    from app.services.normalize import brand_stem
+
+    assert (
+        brand_stem("乐三姐飘香馆一店脆鱼") == brand_stem("乐三姐飘香馆二店脆鱼")
+    )
+    assert brand_stem("明婷饭店") == "明婷饭店"  # 无编号词原样返回
+
+
+def test_ambiguous_branch_mention_goes_to_review(session):
+    """裸品牌名对同城一店/二店同分：不可随机归并，进审核（多候选同分）。"""
+    _add_restaurant(session, name="张记面馆一店")
+    _add_restaurant(session, name="张记面馆二店")
+    _add_mention(session, shop="张记面馆")
+
+    run = align_mentions(session, settings=make_settings())
+    session.commit()
+
+    assert run.mentions_review == 1
+    assert run.restaurants_created == 0
+    review = session.scalars(select(AlignmentReview)).one()
+    assert review.reason == "多候选同分，疑似分店"
+    assert session.get(Mention, review.mention_id).restaurant_id is None
+
+
+def test_branch_context_review_is_annotated(session):
+    """灰区候选若处于同城同品牌多店语境，审核单标注疑似分店。"""
+    _add_mention(session, shop="成都老妈火锅")
+    align_mentions(session, settings=make_settings())
+    session.commit()
+
+    restaurant = session.scalars(select(Restaurant)).one()
+    restaurant.is_chain = True
+    session.flush()
+
+    _add_mention(session, shop="成都老妈串串", source="dianping")
+    align_mentions(session, settings=make_settings())
+    session.commit()
+
+    review = session.scalars(select(AlignmentReview)).one()
+    assert review.status == "pending"
+    assert review.reason == "疑似分店（同城同品牌多店）"
+
+
+def test_non_branch_review_keeps_default_reason(session):
+    _add_mention(session, shop="成都老妈火锅")
+    align_mentions(session, settings=make_settings())
+    session.commit()
+
+    _add_mention(session, shop="成都老妈串串", source="dianping")
+    align_mentions(session, settings=make_settings())
+    session.commit()
+
+    review = session.scalars(select(AlignmentReview)).one()
+    assert review.reason == "灰区相似度"
+
+
+def test_backfill_chain_flags_groups_by_brand_stem(session):
+    from app.services.alignment import backfill_chain_flags
+
+    first = _add_restaurant(session, name="张记面馆一店")
+    second = _add_restaurant(session, name="张记面馆二店")
+    third = _add_restaurant(session, name="王记烧烤")
+
+    stats = backfill_chain_flags(session)
+    session.commit()
+
+    assert stats["brand_groups"] == 1
+    session.refresh(first)
+    session.refresh(second)
+    session.refresh(third)
+    assert first.is_chain and second.is_chain
+    assert not third.is_chain
+
+    # 幂等：重跑不再新增
+    stats2 = backfill_chain_flags(session)
+    assert stats2["flagged"] == 0

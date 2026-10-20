@@ -24,7 +24,12 @@ from ..db.models import (
     Restaurant,
     ShopAlias,
 )
-from .normalize import address_similarity, name_similarity, normalize_shop_name
+from .normalize import (
+    address_similarity,
+    brand_stem,
+    name_similarity,
+    normalize_shop_name,
+)
 
 
 class AlignmentRunResult(BaseModel):
@@ -89,6 +94,16 @@ def _backfill_restaurant(restaurant: Restaurant, mention: MentionRow) -> None:
         restaurant.cuisine = mention.cuisine
     if restaurant.avg_price is None and mention.avg_price is not None:
         restaurant.avg_price = mention.avg_price
+
+
+def _is_branch_context(restaurants: list[Restaurant], target: Restaurant) -> bool:
+    """候选店是否处于"同城同品牌多店"语境（方向五 3.1）：is_chain 或同 brand_stem 有邻居。"""
+    if target.is_chain:
+        return True
+    stem = brand_stem(target.name_norm)
+    return any(
+        r.id != target.id and brand_stem(r.name_norm) == stem for r in restaurants
+    )
 
 
 def align_mentions(
@@ -159,25 +174,42 @@ def align_mentions(
                 result.mentions_aligned += 1
                 continue
 
-            best_restaurant: Restaurant | None = None
-            best_score = 0.0
-            for restaurant in restaurants:
-                score = composite_similarity(norm, address, restaurant, settings)
-                if score > best_score:
-                    best_score, best_restaurant = score, restaurant
+            scored = [
+                (composite_similarity(norm, address, r, settings), r)
+                for r in restaurants
+            ]
+            best_score = max((s for s, _ in scored), default=0.0)
+            # 多候选同分（如裸品牌名对同城一店/二店同分）不可随机归并，交人工裁决
+            ties = [r for s, r in scored if best_score > 0 and abs(s - best_score) <= 1e-9]
+            best_restaurant = ties[0] if ties else None
+            ambiguous = len(ties) > 1
 
-            if best_restaurant is not None and best_score >= settings.align_match_threshold:
+            auto_merge = (
+                best_restaurant is not None
+                and best_score >= settings.align_match_threshold
+                and not ambiguous
+            )
+            if auto_merge:
                 mention.restaurant_id = best_restaurant.id
                 _backfill_restaurant(best_restaurant, mention)
                 result.mentions_aligned += 1
                 if _add_alias(best_restaurant, raw_name, norm, alias_map):
                     result.aliases_added += 1
-            elif best_restaurant is not None and best_score >= settings.align_review_threshold:
+            elif (
+                best_restaurant is not None
+                and best_score >= settings.align_review_threshold
+            ):
+                reason = "灰区相似度"
+                if ambiguous and best_score >= settings.align_match_threshold:
+                    reason = "多候选同分，疑似分店"
+                elif _is_branch_context(restaurants, best_restaurant):
+                    reason = "疑似分店（同城同品牌多店）"
                 session.add(
                     AlignmentReview(
                         mention_id=mention.id,
                         candidate_restaurant_id=best_restaurant.id,
                         score=round(best_score, 4),
+                        reason=reason,
                     )
                 )
                 result.mentions_review += 1
@@ -202,6 +234,34 @@ def align_mentions(
 
     session.flush()
     return result
+
+
+def backfill_chain_flags(session) -> dict:
+    """is_chain 启发式回填（方向五第 2 批）：同城 brand_stem 相同的活跃店 ≥2 家
+    → 该组全部标记 is_chain=True。幂等：已标记的跳过。调用方负责 commit。"""
+    restaurants = session.scalars(
+        select(Restaurant).where(Restaurant.status == "active")
+    ).all()
+
+    groups: dict[tuple[int, str], list[Restaurant]] = {}
+    for r in restaurants:
+        groups.setdefault((r.city_id, brand_stem(r.name_norm)), []).append(r)
+
+    flagged = 0
+    brand_groups = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        brand_groups += 1
+        for r in members:
+            if not r.is_chain:
+                r.is_chain = True
+                flagged += 1
+    return {
+        "brand_groups": brand_groups,
+        "flagged": flagged,
+        "already_chain": sum(1 for r in restaurants if r.is_chain) - flagged,
+    }
 
 
 def list_pending_reviews(session: Session) -> list[AlignmentReview]:

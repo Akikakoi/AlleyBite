@@ -10,11 +10,28 @@ from opencc import OpenCC
 
 _MODIFIER_PREFIX = ("老字号", "正宗", "老")
 _MODIFIER_SUFFIX = ("旗舰店", "总店", "分店", "新店", "老店")
+# 品牌编号词：出现在名称中部（如"乐三姐一店/二店"），normalize 不剥、brand_stem 供分组用
+_BRANCH_NUMBERING = ("一号店", "一店", "二店", "三店")
 _BRACKET_RE = re.compile(r"[（(【\[][^）)】\]]*[）)】\]]")
 _SPACE_RE = re.compile(r"[\s·・]+")
 _ADDR_SPLIT_RE = re.compile(r"[\s,，。.、;；:：/\\\-—()（）【】\[\]]+")
 
 _opencc = OpenCC("t2s")
+
+
+def brand_stem(name_norm: str) -> str:
+    """品牌主干：归一化名再去掉品牌编号词，用于同品牌分组（is_chain 回填 / 扫描）。
+
+    normalize 已剥位置性分店后缀（_MODIFIER_SUFFIX），此处只处理中部的
+    "一店/二店/三店"编号——"乐三姐飘香馆一店脆鱼 / …二店脆鱼" 归同主干。
+    """
+    text = name_norm or ""
+    for word in _BRANCH_NUMBERING:
+        if word in text:
+            stem = text.replace(word, "", 1)
+            if len(stem) >= 2:
+                return stem
+    return text
 
 
 def normalize_shop_name(name: str) -> str:
