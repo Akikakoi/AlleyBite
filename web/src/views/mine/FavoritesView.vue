@@ -8,7 +8,7 @@
       </div>
     </header>
 
-    <EmptyState v-if="state === 'loading'" title="加载中…" />
+    <LoadingState v-if="state === 'loading'" />
     <EmptyState v-else-if="state === 'error'" title="收藏加载失败" :desc="errorMessage">
       <template #action>
         <van-button type="primary" round @click="load">重新加载</van-button>
@@ -72,6 +72,7 @@ import { showToast } from 'vant'
 import { listFavorites, removeFavorite, type FavoriteItem } from '@/api/favorites'
 import { ApiError } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
+import LoadingState from '@/components/LoadingState.vue'
 import { formatDate, formatPrice } from '@/utils/format'
 
 const router = useRouter()

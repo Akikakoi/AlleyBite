@@ -6,7 +6,7 @@
       <span class="detail__bar-spacer" />
     </header>
 
-    <EmptyState v-if="state === 'loading'" title="加载中…" />
+    <LoadingState v-if="state === 'loading'" />
     <EmptyState v-else-if="state === 'error'" title="店铺加载失败" :desc="errorMessage">
       <template #action>
         <van-button type="primary" round @click="load">重新加载</van-button>
@@ -336,6 +336,7 @@ import { getRestaurant } from '@/api/restaurants'
 import { submitFeedback } from '@/api/feedback'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
+import LoadingState from '@/components/LoadingState.vue'
 import KeywordTag from '@/components/KeywordTag.vue'
 import ShareSheet from '@/components/ShareSheet.vue'
 import { useUserStore } from '@/store/user'

@@ -8,7 +8,7 @@
       </div>
     </header>
 
-    <EmptyState v-if="state === 'loading'" title="加载中…" />
+    <LoadingState v-if="state === 'loading'" />
     <EmptyState v-else-if="state === 'error'" title="加载失败" :desc="errorMessage">
       <template #action>
         <van-button type="primary" round @click="load">重新加载</van-button>
@@ -59,6 +59,7 @@ import { useRouter } from 'vue-router'
 import { listMyUgc, type UgcItem } from '@/api/ugc'
 import { ApiError } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
+import LoadingState from '@/components/LoadingState.vue'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()

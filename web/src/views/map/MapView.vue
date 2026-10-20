@@ -12,7 +12,7 @@
     <EmptyState v-if="!amapEnabled" title="地图模式未启用" desc="未配置高德地图 Key，以下为带坐标的店铺，可一键导航" />
 
     <template v-else>
-      <EmptyState v-if="state === 'loading'" title="地图加载中…" />
+      <LoadingState v-if="state === 'loading'" title="地图加载中…" />
       <EmptyState v-else-if="state === 'error'" title="地图加载失败" :desc="errorMessage">
         <template #action>
           <van-button type="primary" round @click="reload">重新加载</van-button>
@@ -61,6 +61,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getRank } from '@/api/rank'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
+import LoadingState from '@/components/LoadingState.vue'
 import ShopCard from '@/components/ShopCard.vue'
 import { useCityStore } from '@/store/city'
 import type { RankFilters, RankItem } from '@/types'
