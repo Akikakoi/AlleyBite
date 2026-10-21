@@ -422,7 +422,15 @@ async function load() {
         })
         .catch(() => {})
       if (userStore.isLoggedIn) {
-        favorited.value = (await fetchFavoriteStatus(detail.value.restaurant_id)).favorited
+        favorited.value = await fetchFavoriteStatus(detail.value.restaurant_id)
+          .then((r) => r.favorited)
+          .catch((err) => {
+            if (err instanceof ApiError && err.status === 401) {
+              // 令牌过期/无效：静默降级为未登录态，不阻断免登录的详情浏览
+              userStore.logout()
+            }
+            return false
+          })
       }
     }
   } catch (err) {

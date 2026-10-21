@@ -54,7 +54,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useUserStore } from '@/store/user'
+import { useRoute, useRouter } from 'vue-router'
 
 import { listMyUgc, type UgcItem } from '@/api/ugc'
 import { ApiError } from '@/api/request'
@@ -63,6 +64,8 @@ import LoadingState from '@/components/LoadingState.vue'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
+const route = useRoute()
+const userStore = useUserStore()
 
 const items = ref<UgcItem[]>([])
 const state = ref<'loading' | 'ready' | 'error'>('loading')
@@ -80,6 +83,12 @@ async function load() {
     items.value = await listMyUgc()
     state.value = 'ready'
   } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      // 令牌过期/无效：清态回登录页，而不是整页报错
+      userStore.logout()
+      router.replace({ path: '/login', query: { redirect: route.fullPath } })
+      return
+    }
     state.value = 'error'
     errorMessage.value = err instanceof ApiError ? err.message : '加载失败，请稍后重试'
   }

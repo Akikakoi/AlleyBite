@@ -66,7 +66,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 
 import { listFavorites, removeFavorite, type FavoriteItem } from '@/api/favorites'
@@ -74,8 +74,11 @@ import { ApiError } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { formatDate, formatPrice } from '@/utils/format'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const route = useRoute()
+const userStore = useUserStore()
 
 const items = ref<FavoriteItem[]>([])
 const state = ref<'loading' | 'ready' | 'error'>('loading')
@@ -87,6 +90,12 @@ async function load() {
     items.value = await listFavorites()
     state.value = 'ready'
   } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      // 令牌过期/无效：清态回登录页，而不是整页报错
+      userStore.logout()
+      router.replace({ path: '/login', query: { redirect: route.fullPath } })
+      return
+    }
     state.value = 'error'
     errorMessage.value = err instanceof ApiError ? err.message : '加载失败，请稍后重试'
   }
