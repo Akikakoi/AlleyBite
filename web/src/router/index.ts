@@ -80,4 +80,16 @@ router.afterEach((to) => {
   document.title = title ? `${title} · ${BASE_TITLE}` : BASE_TITLE
 })
 
+// 部署自愈（2026-10-20）：重新部署后，浏览器里残留的旧页面懒加载已删除的 chunk
+// 会静默失败（点击"没反应"）——命中此类错误时整页刷新到目标路由，拿到新入口。
+router.onError((error, to) => {
+  if (
+    /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk \d+ failed/i.test(
+      error.message,
+    )
+  ) {
+    window.location.assign(to.fullPath)
+  }
+})
+
 export default router
