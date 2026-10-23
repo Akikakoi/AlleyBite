@@ -3,6 +3,8 @@
 - 发布：登录用户对店铺发 300 字内打卡，最多 3 张图（先传图拿路径再提交）
 - 展示：先审后显——仅 approved 对外；我的打卡含全部状态
 - 审核：管理后台 approve/reject，写审计日志
+- 打卡补证（2026-10-23 数据产品路线）：approve 时打卡落地为店铺存活证据
+  （清零 miss、回活 suspect/closed），时间取打卡创建时刻而非审核时刻
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..core.config import Settings
 from ..db.models import Restaurant, UgcPost
+from .liveness import apply_user_evidence
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
@@ -140,7 +143,11 @@ def list_ugc_admin(
 def review_ugc(
     session: Session, post_id: int, status: str
 ) -> tuple[UgcPost, str]:
-    """审核打卡：approved/rejected；返回 (post, 之前状态)。"""
+    """审核打卡：approved/rejected；返回 (post, 之前状态)。
+
+    approved 时打卡落地为存活证据（pending→approved 才触发，
+    重复 approve 不重置，避免刷旧打卡续命）。
+    """
     post = session.get(UgcPost, post_id)
     if post is None:
         raise LookupError("打卡不存在")
@@ -148,5 +155,7 @@ def review_ugc(
         raise ValueError("状态非法")
     before = post.status
     post.status = status
+    if status == "approved" and before != "approved":
+        apply_user_evidence(post.restaurant, post.created_at)
     session.commit()
     return post, before

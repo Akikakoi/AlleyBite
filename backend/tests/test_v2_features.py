@@ -4,7 +4,6 @@
 UGC 发布校验/先审后显/审核流转、图片上传类型与大小校验、推荐策略降级。
 """
 
-import io
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,7 +15,7 @@ from app import main as app_main
 from app.core.config import Settings
 from app.db import get_session
 from app.db.base import Base
-from app.db.models import City, EmailCode, Restaurant, UgcPost, User, ViewEvent
+from app.db.models import City, Restaurant, UgcPost
 from app.main import app
 from app.services.user_auth import register_user
 
@@ -233,6 +232,48 @@ def test_ugc_create_review_and_visibility(client, session, restaurant):
     assert mine[0]["status"] == "approved"
 
 
+def test_ugc_approval_applies_liveness_evidence(client, session, restaurant):
+    """打卡补证：pending→approved 落地存活证据（清零 miss、回活 suspect）；
+    reject 不触发，重复 approve 也不触发（防刷旧打卡续命）。"""
+    from app.services import review_ugc
+
+    token = register_and_login(client)["token"]
+    headers = auth_headers(token)
+
+    restaurant.liveness = "suspect"
+    restaurant.miss_count = 3
+    session.add(restaurant)
+    session.commit()
+
+    def _latest_post() -> UgcPost:
+        resp = client.post(
+            "/api/v1/ugc",
+            json={"restaurant_id": restaurant.id, "content": "还开着，刚去过"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        return session.scalar(
+            select(UgcPost)
+            .where(UgcPost.restaurant_id == restaurant.id)
+            .order_by(UgcPost.id.desc())
+        )
+
+    post = _latest_post()
+    review_ugc(session, post.id, "rejected")
+    assert restaurant.miss_count == 3
+
+    review_ugc(session, post.id, "approved")
+    assert restaurant.liveness == "active"
+    assert restaurant.miss_count == 0
+    assert restaurant.last_checkin_at is not None
+
+    restaurant.miss_count = 2
+    session.add(restaurant)
+    session.commit()
+    review_ugc(session, post.id, "approved")
+    assert restaurant.miss_count == 2
+
+
 def test_ugc_content_validation(client, restaurant):
     token = register_and_login(client)["token"]
     headers = auth_headers(token)
@@ -299,8 +340,9 @@ def test_recommend_taste_strategy_excludes_favorites(client, session, restaurant
     client.post("/api/v1/views", json={"restaurant_id": target.id}, headers=headers)
 
     # 注入偏好城市的榜单快照（绕过打分，直接造快照）
-    from app.db.models import RankSnapshot
     from datetime import datetime, timezone
+
+    from app.db.models import RankSnapshot
 
     session.add(
         RankSnapshot(

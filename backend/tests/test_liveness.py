@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from collectors_fakes import memory_session
+
 from app.collectors.amap import PoiRecord, upsert_pois
-from app.db.models import Mention, RawContent, Restaurant
+from app.db.models import Mention, RawContent, Restaurant, UgcPost, User
 from app.services.alignment import get_or_create_city
 from app.services.liveness import (
+    apply_user_evidence,
     backfill_first_last_mentioned,
+    backfill_last_checkin,
     evaluate_liveness,
     mark_city_misses,
     mark_seen,
 )
-from collectors_fakes import memory_session
 
 
 def _utc(*args) -> datetime:
@@ -215,6 +218,79 @@ def test_mark_city_misses_never_seen_shops_do_not_count():
 def test_mark_city_misses_unknown_city_is_noop():
     with memory_session() as s:
         assert mark_city_misses(s, "不存在的城市", before=_utc(2026, 10, 14)) == 0
+
+
+# --- 打卡补证（2026-10-23 数据产品路线）--------------------------------------
+
+def test_apply_user_evidence_resets_miss_and_revives_suspect():
+    with memory_session() as s:
+        shop = _make_restaurant(s, name="回活店", liveness="suspect", miss_count=3)
+
+        apply_user_evidence(shop, _utc(2026, 10, 23, 12, 0))
+
+        assert shop.liveness == "active"
+        assert shop.miss_count == 0
+        assert shop.last_checkin_at == _utc(2026, 10, 23, 12, 0)
+
+
+def test_apply_user_evidence_reopens_closed():
+    """approved 打卡是审核过的第一手在店证据，强于 POI 召回（可能撞名），
+    故 closed 也可回活；closed_at 同时清掉，避免陈旧闭店时间残留。"""
+    with memory_session() as s:
+        shop = _make_restaurant(
+            s, name="误闭店", liveness="closed", miss_count=12,
+            closed_at=_utc(2026, 10, 1),
+        )
+
+        apply_user_evidence(shop, _utc(2026, 10, 23, 12, 0))
+
+        assert shop.liveness == "active"
+        assert shop.closed_at is None
+        assert shop.miss_count == 0
+        assert shop.last_checkin_at == _utc(2026, 10, 23, 12, 0)
+
+
+def test_apply_user_evidence_keeps_relocated():
+    """relocated 是人工处置态：证据字段照常落地，liveness 不自动改。"""
+    with memory_session() as s:
+        shop = _make_restaurant(s, name="已搬迁", liveness="relocated", miss_count=7)
+
+        apply_user_evidence(shop, _utc(2026, 10, 23, 12, 0))
+
+        assert shop.liveness == "relocated"
+        assert shop.miss_count == 0
+        assert shop.last_checkin_at is not None
+
+
+def test_backfill_last_checkin_uses_approved_only():
+    """先审后显是信任边界：pending/rejected 不构成存活证据。"""
+    with memory_session() as s:
+        user = User(username="u1", password_hash="x")
+        s.add(user)
+        s.flush()
+        shop = _make_restaurant(s, name="打卡店")
+        other = _make_restaurant(s, name="无打卡店")
+        for status, created in (
+            ("approved", _utc(2026, 10, 20)),
+            ("pending", _utc(2026, 10, 22)),
+            ("rejected", _utc(2026, 10, 23)),
+        ):
+            s.add(
+                UgcPost(
+                    user_id=user.id,
+                    restaurant_id=shop.id,
+                    content="刚去过，还开着",
+                    status=status,
+                    created_at=created,
+                )
+            )
+        s.flush()
+
+        stats = backfill_last_checkin(s)
+
+        assert stats["restaurants_with_checkin"] == 1
+        assert shop.last_checkin_at == _utc(2026, 10, 20)
+        assert other.last_checkin_at is None
 
 
 # --- 第 3 批：状态机 ---------------------------------------------------------

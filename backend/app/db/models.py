@@ -204,6 +204,9 @@ class Restaurant(Base):
     # active | suspect | closed | relocated（与 status 正交：市场事实 vs 运营处置）
     liveness: Mapped[str] = mapped_column(String(16), default="active")
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 打卡补证（2026-10-23 数据产品路线）：最近一次审核通过的打卡时间，
+    # 是 POI 之外的存活证据源；审核通过时同时清零 miss 并回活
+    last_checkin_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

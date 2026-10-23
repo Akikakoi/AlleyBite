@@ -6,6 +6,9 @@
 - 存活监测：POI 刷新命中即刷 last_seen_at / 清零 miss_count（suspect 回活）；
   本城未命中的 POI 底座店铺 miss_count += 1。liveness 状态机的推进
   （suspect/closed 阈值判定）属第 3 批，本模块暂不迁移状态。
+- 打卡补证（2026-10-23 数据产品路线）：审核通过的 UGC 打卡是第一手在店证据，
+  强于 POI 关键词命中——POI 命中只回活 suspect（mark_seen），打卡可回活 closed；
+  relocated 为人工处置态，两者都不越过。
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..core.config import Settings, get_settings
-from ..db.models import City, Mention, RawContent, Restaurant
+from ..db.models import City, Mention, RawContent, Restaurant, UgcPost
 from .scoring import to_utc
 
 # suspect 及以上的店铺再次命中 POI 时的回活规则：suspect 直接回 active；
@@ -72,11 +75,55 @@ def backfill_first_last_mentioned(session: Session) -> dict:
     return stats
 
 
+def backfill_last_checkin(session: Session) -> dict:
+    """从历史 approved 打卡回填 last_checkin_at（幂等，全量覆盖）。
+
+    仅取 approved：pending/rejected 不构成存活证据（先审后显是信任边界）。
+    """
+    rows = session.execute(
+        select(UgcPost.restaurant_id, func.max(UgcPost.created_at))
+        .where(UgcPost.status == "approved")
+        .group_by(UgcPost.restaurant_id)
+    ).all()
+    stats = {"restaurants_with_checkin": 0, "missing_restaurant": 0}
+    for rid, last in rows:
+        restaurant = session.get(Restaurant, rid)
+        if restaurant is None:  # 挂靠后被物理删除的残留
+            stats["missing_restaurant"] += 1
+            continue
+        restaurant.last_checkin_at = to_utc(last)
+        stats["restaurants_with_checkin"] += 1
+    session.flush()
+    return stats
+
+
 def mark_seen(restaurant: Restaurant, seen_at: datetime) -> None:
     """POI 刷新命中：刷 last_seen_at、清零 miss_count；suspect 回活。"""
     restaurant.last_seen_at = seen_at
     restaurant.miss_count = 0
     if restaurant.liveness in _REVIVABLE:
+        restaurant.liveness = "active"
+
+
+# 打卡补证可回活的状态：approved 打卡是人工审核过的第一手在店证据，
+# 强于 POI 关键词召回（可能撞名），故 closed 也可回活；relocated 是人工处置态。
+_REVIVABLE_BY_EVIDENCE = {"active", "suspect", "closed"}
+
+
+def apply_user_evidence(restaurant: Restaurant, at: datetime) -> None:
+    """审核通过的打卡落地为存活证据（ugc_service.review_ugc 在通过时调用）。
+
+    - last_checkin_at 记证据时间（取打卡创建时刻，即用户到店时间，非审核时刻）；
+    - miss_count 清零：此后 POI 轮次从 0 重新累计，证据随轮次自然衰减，
+      无需额外的保鲜期参数；
+    - suspect/closed 回活为 active（closed 同时清 closed_at，避免陈旧闭店时间残留）；
+      relocated 不动。
+    """
+    restaurant.last_checkin_at = to_utc(at)
+    restaurant.miss_count = 0
+    if restaurant.liveness in _REVIVABLE_BY_EVIDENCE:
+        if restaurant.liveness == "closed":
+            restaurant.closed_at = None
         restaurant.liveness = "active"
 
 

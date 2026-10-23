@@ -53,6 +53,8 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "miss_count": "INTEGER NOT NULL DEFAULT 0",
         "liveness": "VARCHAR(16) NOT NULL DEFAULT 'active'",
         "closed_at": "TIMESTAMP",
+        # 打卡补证（2026-10-23 数据产品路线）：审核通过的打卡作为存活证据源
+        "last_checkin_at": "TIMESTAMP",
     },
     "raw_content": {
         # ingest 幂等短路指纹（2026-10-16）：重复抓取不再作废清洗/抽取结果
