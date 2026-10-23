@@ -87,6 +87,10 @@ def collect_shop_scores(
             # 方向四第 3 批：liveness=closed 的店不进榜（榜单构建时过滤，不靠分数压到 0）
             if row.restaurant.liveness == "closed":
                 continue
+            # 产品定位（2026-10-23）：苍蝇馆子只收单店小店，多门店品牌不进榜；
+            # 已知全国连锁品牌由 apply_hard_rules 的 chain_brand_blacklist 在同一轮打分中剔除
+            if row.restaurant.is_chain:
+                continue
             aligned.setdefault(row.restaurant_id, []).append(fact)
             aligned_restaurants[row.restaurant_id] = row.restaurant
             # restaurant.address 多为空，地址实际落在 mention 上；取其作商场店判定依据

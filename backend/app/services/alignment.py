@@ -262,7 +262,11 @@ def align_mentions(
 
 def backfill_chain_flags(session) -> dict:
     """is_chain 启发式回填（方向五第 2 批）：同城 brand_stem 相同的活跃店 ≥2 家
-    → 该组全部标记 is_chain=True。幂等：已标记的跳过。调用方负责 commit。"""
+    → 该组全部标记 is_chain=True。幂等：已标记的跳过。调用方负责 commit。
+
+    注意：全国连锁品牌不在此标记——它们由 scoring 的 chain_brand_blacklist 硬规则
+    剔除，避免把可配置的品牌清单固化成库内状态。
+    """
     restaurants = session.scalars(
         select(Restaurant).where(Restaurant.status == "active")
     ).all()

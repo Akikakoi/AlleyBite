@@ -1,4 +1,4 @@
-"""方向五第 2 批：is_chain 启发式回填（薄壳，核心在 app/services/alignment.py）。
+"""is_chain 回填（方向五第 2 批，薄壳，核心在 app/services/alignment.py）。
 
 口径：同城内 brand_stem 相同的活跃店 ≥2 家 → 该组全部标记 is_chain=True
 （normalize 已剥位置性分店后缀，brand_stem 再归并中部的"一店/二店/三店"编号，

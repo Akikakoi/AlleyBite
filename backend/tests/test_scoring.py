@@ -384,3 +384,52 @@ def test_collect_shop_scores_skips_non_active_restaurant(session):
     session.flush()
 
     assert collect_shop_scores(session, settings=settings, now=NOW) == []
+
+
+def test_collect_shop_scores_skips_chain_restaurant(session):
+    """产品定位（2026-10-23）：多门店品牌（is_chain）不进榜。"""
+    settings = make_settings()
+    row = ingest_raw_content(
+        session, source="forum", raw_text=SAMPLES[0][2], city_hint="成都", settings=settings
+    )
+    session.commit()
+    extract_raw_content(session, row.id, settings=settings)
+    session.commit()
+    align_mentions(session, settings=settings)
+    session.commit()
+
+    restaurant = session.scalars(select(Restaurant)).one()
+    restaurant.is_chain = True
+    session.flush()
+
+    assert collect_shop_scores(session, settings=settings, now=NOW) == []
+
+
+def test_collect_shop_scores_excludes_known_chain_brand(session):
+    """已知连锁品牌走 chain_brand_blacklist 硬规则剔除（不再靠人工逐条屏蔽）。"""
+    settings = make_settings()
+    rc = RawContent(
+        source="forum",
+        content_hash=compute_content_hash("chain-brand-case"),
+        raw_text="小龙坎火锅还不错",
+        city_hint="成都",
+        status="extracted",
+    )
+    session.add(rc)
+    session.flush()
+    session.add(
+        MentionRow(
+            raw_content_id=rc.id,
+            shop_name_raw="小龙坎火锅",
+            sentiment="positive",
+            is_recommendation=True,
+        )
+    )
+    session.flush()
+    align_mentions(session, settings=settings)
+    session.commit()
+
+    scores = collect_shop_scores(session, settings=settings, now=NOW)
+    assert len(scores) == 1
+    assert scores[0].excluded is True
+    assert "连锁品牌黑名单" in (scores[0].exclude_reason or "")
