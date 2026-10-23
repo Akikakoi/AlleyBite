@@ -179,6 +179,8 @@ def test_list_cities_union_hint_and_city(session):
     assert [c["name"] for c in collecting] == ["成都"]
     assert collecting[0]["status"] == "collecting"
     assert collecting[0]["has_rank"] is False
+    assert collecting[0]["maturity"] == "collecting"
+    assert collecting[0]["updated_at"] is None
 
     align_mentions(session, settings=settings)
     session.commit()
@@ -188,3 +190,6 @@ def test_list_cities_union_hint_and_city(session):
     active = list_cities(session)
     assert active[0]["status"] == "active"
     assert active[0]["has_rank"] is True
+    # 产品定位（2026-10-23）：成熟度/更新时间/证据数随快照与提及产出
+    assert active[0]["maturity"] == "collecting"  # 1 条 < 初始覆盖阈值 5
+    assert active[0]["updated_at"] is not None

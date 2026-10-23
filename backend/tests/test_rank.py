@@ -11,7 +11,12 @@ from app.db.models import City, Mention as MentionRow, RawContent, Restaurant
 from app.services.alignment import align_mentions
 from app.services.extract_pipeline import extract_raw_content
 from app.services.ingest import compute_content_hash, ingest_raw_content
-from app.services.rank_service import build_rank_snapshot, get_latest_snapshot, get_rank
+from app.services.rank_service import (
+    build_rank_snapshot,
+    city_maturity,
+    get_latest_snapshot,
+    get_rank,
+)
 
 NOW = datetime(2026, 10, 4, tzinfo=timezone.utc)
 
@@ -147,6 +152,29 @@ def test_get_rank_pagination_and_filters(session):
     assert {i["name"] for i in get_rank(session, "成都", price_max=60)["items"]} == {"甲店"}
     assert {i["name"] for i in get_rank(session, "成都", price_min=100)["items"]} == {"乙店"}
     assert {i["name"] for i in get_rank(session, "成都", area="青羊区")["items"]} == {"甲店"}
+
+
+def test_city_maturity_tiers():
+    """产品定位（2026-10-23）：按榜单条数分深度/初步/收录中三档。"""
+    assert city_maturity(0) == "collecting"
+    assert city_maturity(4) == "collecting"
+    assert city_maturity(5) == "initial"
+    assert city_maturity(29) == "initial"
+    assert city_maturity(30) == "deep"
+
+
+def test_get_rank_returns_city_maturity(session):
+    """榜单响应带城市覆盖度（不受筛选影响）与成熟度。"""
+    settings = make_settings()
+    _seed_mention(session, "甲店")
+    align_mentions(session, settings=settings)
+    session.commit()
+    build_rank_snapshot(session, "成都", settings=settings, now=NOW)
+    session.commit()
+
+    data = get_rank(session, "成都")
+    assert data["city_rank_count"] == 1
+    assert data["maturity"] == "collecting"
 
 
 def test_get_rank_returns_none_without_snapshot(session):

@@ -84,13 +84,7 @@
           @click="go(city.name)"
         >
           <span class="city-chip__name">{{ city.name }}</span>
-          <span class="city-chip__status text-sub">
-            {{
-              city.has_rank
-                ? `榜单 ${city.rank_count ?? 0} 家`
-                : '正在收录'
-            }}
-          </span>
+          <span class="city-chip__status text-sub">{{ cityStatus(city) }}</span>
         </button>
       </div>
     </section>
@@ -126,6 +120,20 @@ import type { City } from '@/types'
 const router = useRouter()
 const store = useCityStore()
 const userStore = useUserStore()
+
+/** 城市覆盖度文案（产品定位 2026-10-23）：薄数据城市如实说明，不假装满榜 */
+const MATURITY_LABELS: Record<string, string> = {
+  deep: '深度覆盖',
+  initial: '初步覆盖',
+  collecting: '少量收录',
+}
+
+function cityStatus(city: City): string {
+  if (!city.has_rank) return '正在收录'
+  const count = city.rank_count ?? 0
+  const label = MATURITY_LABELS[city.maturity ?? 'collecting'] ?? '少量收录'
+  return `${count} 家 · ${label}`
+}
 
 const keyword = ref('')
 const cities = ref<City[]>([])

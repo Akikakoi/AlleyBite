@@ -16,7 +16,7 @@ from .cache import RankCache
 from .extract_pipeline import extract_raw_content
 from .extractor import Extractor
 from .metrics import llm_usage_delta, llm_usage_snapshot
-from .rank_service import build_rank_snapshot
+from .rank_service import build_rank_snapshot, city_maturity
 from .scoring import to_utc
 
 
@@ -110,7 +110,6 @@ def list_cities(session: Session) -> list[dict]:
             select(RawContent.city_hint).where(RawContent.city_hint.is_not(None))
         ).all()
     )
-    ranked_city_ids = set(session.scalars(select(RankSnapshot.city_id).distinct()).all())
     # 热度指标：各城市已收录店铺数（City 行在对齐时才惰性创建，线索城市可能尚无行）
     restaurant_counts = dict(
         session.execute(
@@ -119,30 +118,36 @@ def list_cities(session: Session) -> list[dict]:
             .group_by(City.name)
         ).all()
     )
-    # 榜单条数：各城市最新快照的 items 长度（与榜单页所见一致）
+    # 榜单条数与最近更新时间：各城市最新快照（与榜单页所见一致）
     latest_snapshot_ids = (
         select(func.max(RankSnapshot.id)).group_by(RankSnapshot.city_id)
     )
-    rank_counts = dict(
-        session.execute(
-            select(
-                RankSnapshot.city_id,
-                func.json_array_length(RankSnapshot.items),
-            ).where(RankSnapshot.id.in_(latest_snapshot_ids))
-        ).all()
-    )
+    snapshot_rows = session.execute(
+        select(
+            RankSnapshot.city_id,
+            RankSnapshot.generated_at,
+            func.json_array_length(RankSnapshot.items),
+        ).where(RankSnapshot.id.in_(latest_snapshot_ids))
+    ).all()
+    rank_counts = {city_id: count for city_id, _, count in snapshot_rows}
+    snapshot_times = {city_id: generated for city_id, generated, _ in snapshot_rows}
 
     rows: list[dict] = []
     for name in sorted(set(cities) | hints):
         city = cities.get(name)
+        rank_count = int(rank_counts.get(city.id, 0)) if city else 0
+        generated = snapshot_times.get(city.id) if city else None
         rows.append(
             {
                 "name": name,
                 "code": city.code if city else None,
                 "status": city.status if city else "collecting",
-                "has_rank": bool(city and city.id in ranked_city_ids),
+                "has_rank": bool(city and city.id in rank_counts),
                 "restaurant_count": int(restaurant_counts.get(name, 0)),
-                "rank_count": int(rank_counts.get(city.id, 0)) if city else 0,
+                "rank_count": rank_count,
+                # 成熟度标注（产品定位 2026-10-23）：薄数据城市诚实呈现覆盖度
+                "updated_at": to_utc(generated).isoformat() if generated else None,
+                "maturity": city_maturity(rank_count),
             }
         )
     return rows

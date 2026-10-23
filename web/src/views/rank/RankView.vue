@@ -4,7 +4,10 @@
       <button class="rank__back press-feedback" aria-label="返回" @click="router.back()">‹</button>
       <div class="rank__title">
         <h1 class="page-title">{{ city }}</h1>
-        <p class="text-sub">苍蝇馆子榜 · 综合分排序</p>
+        <p class="text-sub">苍蝇馆子榜 · 只收单店小店</p>
+        <p v-if="state === 'ready' && cityRankCount" class="text-sub rank__meta">
+          {{ metaLine }}
+        </p>
       </div>
       <div class="rank__actions">
         <van-button size="small" round plain @click="toMap">地图</van-button>
@@ -82,6 +85,10 @@
           @click="goPage(currentPage + 1)"
         >›</button>
       </nav>
+      <!-- 收录口径（产品定位 2026-10-23）：把标准写在明面上，用户可据此判断榜单边界 -->
+      <p class="text-sub rank__standard">
+        收录口径：本地单店小店，连锁与已歇业店不进榜；每条口碑均标注原文来源。
+      </p>
     </template>
 
     <ShareSheet
@@ -128,6 +135,26 @@ const loading = ref(false)
 const state = ref<'ready' | 'collecting' | 'error'>('ready')
 const errorMessage = ref('')
 const showShare = ref(false)
+/** 城市覆盖度（产品定位 2026-10-23）：条数取最新快照全量，不受筛选影响 */
+const cityRankCount = ref(0)
+const maturity = ref<string>('collecting')
+const generatedAt = ref<string | null>(null)
+const MATURITY_LABELS: Record<string, string> = {
+  deep: '深度覆盖',
+  initial: '初步覆盖',
+  collecting: '少量收录',
+}
+const metaLine = computed(() => {
+  const parts = [`${cityRankCount.value} 家上榜`]
+  parts.push(MATURITY_LABELS[maturity.value] ?? '少量收录')
+  if (generatedAt.value) {
+    const d = new Date(generatedAt.value)
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(`更新 ${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`)
+    }
+  }
+  return parts.join(' · ')
+})
 
 /** 筛选选项跨页累积：翻页后下拉选项不丢失 */
 const cuisines = ref<string[]>([])
@@ -170,6 +197,8 @@ function reset() {
   items.value = []
   currentPage.value = 1
   total.value = 0
+  cityRankCount.value = 0
+  generatedAt.value = null
   cuisines.value = []
   areas.value = []
   state.value = 'ready'
@@ -195,6 +224,9 @@ async function loadPage() {
     if (seq !== requestSeq) return
     items.value = data.items
     total.value = data.total
+    cityRankCount.value = data.city_rank_count ?? data.total
+    maturity.value = data.maturity ?? 'collecting'
+    generatedAt.value = data.generated_at
     mergeOptions(data.items)
     state.value = 'ready'
   } catch (err) {
@@ -339,6 +371,20 @@ function shareUrl(): string {
 
 .rank__title .text-sub {
   margin: 2px 0 0;
+}
+
+/* 覆盖度/更新时间：第三行弱化展示，避免与标题抢视觉 */
+.rank__meta {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* 收录口径说明：列表末尾的诚实边界声明 */
+.rank__standard {
+  margin: 16px 4px 0;
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.7;
 }
 
 .rank__actions {

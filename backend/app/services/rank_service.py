@@ -30,6 +30,20 @@ MAX_DETAIL_SOURCES = 10
 MAX_SOURCE_LIST = 20
 _EXCERPT_LIMIT = 120
 
+# 城市成熟度分档（产品定位 2026-10-23）：榜单薄的城市要诚实呈现覆盖度，
+# 而不是让用户以为"就这几家"。阈值按最新快照条数划分。
+MATURITY_DEEP_MIN = 30
+MATURITY_INITIAL_MIN = 5
+
+
+def city_maturity(rank_count: int) -> str:
+    """城市覆盖分档：deep（深度覆盖）/ initial（初步覆盖）/ collecting（收录中）。"""
+    if rank_count >= MATURITY_DEEP_MIN:
+        return "deep"
+    if rank_count >= MATURITY_INITIAL_MIN:
+        return "initial"
+    return "collecting"
+
 
 def _mention_time(row: MentionRow) -> datetime | None:
     content = row.raw_content
@@ -389,6 +403,9 @@ def get_rank(
         "page": page,
         "page_size": page_size,
         "items": items[start : start + page_size],
+        # 城市覆盖度（不受筛选影响）：条数取最新快照全量，供前端诚实标注成熟度
+        "city_rank_count": len(snapshot.items or []),
+        "maturity": city_maturity(len(snapshot.items or [])),
     }
     if cache_key is not None:
         cache.set(cache_key, data)

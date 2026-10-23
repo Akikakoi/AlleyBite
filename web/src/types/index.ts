@@ -1,5 +1,8 @@
 /** 与后端接口响应结构对齐（文档 7.3 / 8.1） */
 
+/** 城市覆盖度分档（产品定位 2026-10-23）：薄数据城市诚实标注 */
+export type CityMaturity = 'deep' | 'initial' | 'collecting'
+
 export interface City {
   name: string
   code: string | null
@@ -9,6 +12,10 @@ export interface City {
   restaurant_count?: number
   /** 最新榜单条数（与榜单页所见一致）；早期版本可能缺失 */
   rank_count?: number
+  /** 最新快照生成时间；无榜单为 null */
+  updated_at?: string | null
+  /** 覆盖度分档；早期版本可能缺失 */
+  maturity?: CityMaturity
 }
 
 export interface SourceRef {
@@ -49,6 +56,10 @@ export interface RankData {
   page: number
   page_size: number
   items: RankItem[]
+  /** 城市最新快照全量条数（不受筛选影响）；早期版本可能缺失 */
+  city_rank_count?: number
+  /** 城市覆盖度分档；早期版本可能缺失 */
+  maturity?: CityMaturity
 }
 
 export interface RestaurantDetail {
