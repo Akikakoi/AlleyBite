@@ -23,6 +23,7 @@ const COLORS = {
   border: 'rgba(38, 34, 31, 0.08)',
   good: '#3fa36b',
   goodSoft: 'rgba(63, 163, 107, 0.12)',
+  danger: '#c0453a',
 }
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif"
@@ -80,12 +81,37 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 const BRAND = '苍蝇馆子'
 const FOOTER_NOTE = '数据来源于公开信息，仅供参考，信息可能滞后'
 
-function drawFooter(ctx: CanvasRenderingContext2D, y: number, url: string): number {
+/** 图卡上的成熟度文案（方向六批 1）：面向转发场景自解释，站内页头用另一套短标签 */
+const MATURITY_POSTER_TEXT: Record<string, string> = {
+  deep: '证据充足 · 全量证据可溯源',
+  initial: '数据较薄 · 持续补证中',
+  collecting: '新开城 · 收录中',
+}
+
+/** ISO 日期 → 「M-D」；解析失败返回 null（图卡宁可少一行也不放假日期） */
+function formatDay(value: string | null | undefined): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function drawFooter(
+  ctx: CanvasRenderingContext2D,
+  y: number,
+  url: string,
+  dateText?: string | null,
+): number {
   ctx.fillStyle = COLORS.sub
   ctx.font = `22px ${FONT}`
-  ctx.fillText(FOOTER_NOTE, PAD, y)
-  ctx.fillText(url, PAD, y + 32)
-  return y + 32
+  let cursor = y
+  if (dateText) {
+    ctx.fillText(dateText, PAD, cursor)
+    cursor += 32
+  }
+  ctx.fillText(FOOTER_NOTE, PAD, cursor)
+  ctx.fillText(url, PAD, cursor + 32)
+  return cursor + 32
 }
 
 function drawTags(
@@ -131,26 +157,35 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 export interface RankPosterOptions {
   city: string
   items: RankItem[]
+  /** 全榜条数（快照全量，非截取的 Top5）；缺省回退 items.length */
+  count?: number
+  /** 城市成熟度分档（deep/initial/collecting）；缺失时不渲染档位行 */
+  maturity?: string
+  /** 快照生成时间（ISO）；渲染「数据截至 M-D」 */
+  updatedAt?: string | null
   baseUrl?: string
 }
 
-/** 榜单分享图：城市名 + Top N 店铺卡片 + 页脚（文档 9.2） */
+/** 榜单分享图：城市名 + 诚实三要素 + Top N 店铺卡片 + 页脚（文档 9.2 / 方向六批 1） */
 export async function renderRankPoster({
   city,
   items,
+  count,
+  maturity,
+  updatedAt,
   baseUrl = window.location.origin,
 }: RankPosterOptions): Promise<Blob> {
   const shops = items.slice(0, 5)
-  const headerH = 210
+  const headerH = 262
   const cardH = 168
-  const footerH = 120
+  const footerH = 150
   const height = headerH + shops.length * (cardH + 16) + footerH + PAD
 
   const { ctx, canvas } = createContext(height)
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, WIDTH, height)
 
-  // 头部
+  // 头部：标题 + 全榜条数 + 成熟度档位（诚实三要素之二，截至日期在页脚）
   ctx.fillStyle = COLORS.primary
   ctx.fillRect(0, 0, WIDTH, 14)
   ctx.fillStyle = COLORS.secondary
@@ -158,13 +193,22 @@ export async function renderRankPoster({
   ctx.fillText(`${city}苍蝇馆子榜`, PAD, 96)
   ctx.fillStyle = COLORS.sub
   ctx.font = `26px ${FONT}`
-  ctx.fillText('本地人才知道的宝藏小店 · 综合分排序', PAD, 142)
+  const totalCount = count ?? items.length
+  const tagline = totalCount
+    ? `全榜 ${totalCount} 家 · 本地人才知道的宝藏小店`
+    : '本地人才知道的宝藏小店 · 综合分排序'
+  ctx.fillText(tagline, PAD, 142)
+  const maturityText = maturity ? MATURITY_POSTER_TEXT[maturity] : undefined
+  if (maturityText) {
+    ctx.font = `24px ${FONT}`
+    ctx.fillText(maturityText, PAD, 180)
+  }
   ctx.fillStyle = COLORS.primarySoft
-  roundRect(ctx, PAD, 158, 96, 36, 18)
+  roundRect(ctx, PAD, 200, 96, 36, 18)
   ctx.fill()
   ctx.fillStyle = COLORS.primary
   ctx.font = `bold 22px ${FONT}`
-  ctx.fillText(BRAND, PAD + 16, 183)
+  ctx.fillText(BRAND, PAD + 16, 225)
 
   // 店铺卡片
   let y = headerH
@@ -201,11 +245,27 @@ export async function renderRankPoster({
     const meta = [item.area, formatPrice(item.avg_price)].filter(Boolean).join(' · ')
     ctx.fillText(meta, textX, y + 100)
 
+    // 存活状态角标（方向四数据 + 方向六呈现）：不把没核实的店当 certainty 传出去
+    if (item.liveness === 'closed') {
+      ctx.fillStyle = COLORS.danger
+      ctx.font = `22px ${FONT}`
+      ctx.textAlign = 'right'
+      ctx.fillText('已标记歇业', WIDTH - PAD - 24, y + 100)
+      ctx.textAlign = 'left'
+    } else if (item.liveness === 'suspect') {
+      ctx.fillStyle = COLORS.sub
+      ctx.font = `22px ${FONT}`
+      ctx.textAlign = 'right'
+      ctx.fillText('近期未查到', WIDTH - PAD - 24, y + 100)
+      ctx.textAlign = 'left'
+    }
+
     drawTags(ctx, item.praise_keywords, textX, y + 118, textW, 3)
     y += cardH + 16
   })
 
-  drawFooter(ctx, height - 70, baseUrl)
+  const dateText = formatDay(updatedAt)
+  drawFooter(ctx, height - 102, baseUrl, dateText ? `数据截至 ${dateText}` : null)
   return toBlob(canvas)
 }
 
@@ -214,12 +274,23 @@ export interface ShopPosterOptions {
   baseUrl?: string
 }
 
-/** 店铺分享图：单店卡片 + 地址 + 免责声明（文档 9.2） */
+/** 店铺分享图：单店卡片 + 存活状态 + 地址 + 免责声明（文档 9.2 / 方向六批 1） */
 export async function renderShopPoster({
   detail,
   baseUrl = window.location.origin,
 }: ShopPosterOptions): Promise<Blob> {
-  const headerH = 250
+  // 状态行（方向四数据 + 方向六呈现）：suspect/closed 必须随图卡带走，防止把没核实的店当确定推荐
+  const status =
+    detail.liveness === 'closed'
+      ? {
+          text: detail.closed_at ? `已标记歇业 · ${detail.closed_at} 起` : '已标记歇业',
+          color: COLORS.danger,
+        }
+      : detail.liveness === 'suspect'
+        ? { text: '近期未查到 · 营业情况请以到店为准', color: COLORS.sub }
+        : null
+  const statusOffset = status ? 48 : 0
+  const headerH = 250 + statusOffset
   const blockH = 150
   const height = headerH + blockH * 2 + 240
 
@@ -242,15 +313,21 @@ export async function renderShopPoster({
     .join(' · ')
   ctx.fillText(subline, PAD, 146)
 
+  if (status) {
+    ctx.fillStyle = status.color
+    ctx.font = `24px ${FONT}`
+    ctx.fillText(status.text, PAD, 184)
+  }
+
   ctx.fillStyle = COLORS.primarySoft
-  roundRect(ctx, PAD, 176, 230, 72, 20)
+  roundRect(ctx, PAD, 176 + statusOffset, 230, 72, 20)
   ctx.fill()
   ctx.fillStyle = COLORS.primary
   ctx.font = `bold 40px ${FONT}`
-  ctx.fillText(formatScore(detail.display_score ?? detail.score), PAD + 24, 226)
+  ctx.fillText(formatScore(detail.display_score ?? detail.score), PAD + 24, 226 + statusOffset)
   ctx.fillStyle = COLORS.sub
   ctx.font = `22px ${FONT}`
-  ctx.fillText('综合分', PAD + 118, 226)
+  ctx.fillText('综合分', PAD + 118, 226 + statusOffset)
 
   // 推荐菜
   let y = headerH
@@ -281,7 +358,8 @@ export async function renderShopPoster({
   const addrLines = wrapText(ctx, detail.address || '地址待补充', WIDTH - PAD * 2)
   addrLines.slice(0, 2).forEach((line, i) => ctx.fillText(line, PAD, y + 36 + i * 34))
 
-  drawFooter(ctx, height - 70, baseUrl)
+  const lastEvidence = formatDay(detail.last_mentioned_at)
+  drawFooter(ctx, height - 102, baseUrl, lastEvidence ? `最近证据 ${lastEvidence}` : null)
   return toBlob(canvas)
 }
 

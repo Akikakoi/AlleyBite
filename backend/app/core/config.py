@@ -146,6 +146,12 @@ class Settings(BaseSettings):
     feedback_content_max_len: int = 500         # 纠错正文长度上限
     feedback_ip_salt: str = "alleybite"         # IP 哈希加盐，避免明文/裸哈希留存
 
+    # 行为埋点（方向六 榜单可带走 2026-10-23）：免登录可写，按 IP 哈希限流。
+    # 上限放宽（120/时）：正常用户每次榜单页浏览都会上报 rank_view，多人共用
+    # 出口 IP 时需留余量；超限丢弃只轻微低估 UV，不影响正确性。
+    track_rate_limit_max: int = 120             # 单 IP 窗口内最多事件数
+    track_rate_limit_window_minutes: int = 60
+
     # 分享预览（文档 9.4 / 14 章验收）：爬虫 UA 分流后由此渲染动态 og 元信息
     share_base_url: str = ""                    # 对外访问基址；留空则由请求头推导
     share_og_image: str = "/og-default.jpg"     # 默认分享图；绝对 URL 原样输出

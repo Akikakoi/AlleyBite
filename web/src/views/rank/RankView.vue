@@ -98,6 +98,8 @@
       :url="shareUrl()"
       :filename="`${city}苍蝇馆子榜.png`"
       :poster="rankPoster"
+      kind="rank"
+      :city="city"
     />
   </div>
 </template>
@@ -116,6 +118,7 @@ import ShopCard from '@/components/ShopCard.vue'
 import { useCityStore } from '@/store/city'
 import type { RankFilters, RankItem } from '@/types'
 import { renderRankPoster } from '@/utils/shareImage'
+import { track } from '@/utils/track'
 
 /** 文档 9.2：榜单分页展示，每页 15 条 */
 const PAGE_SIZE = 15
@@ -177,6 +180,8 @@ if (!city.value) {
 
 // 原 van-list 挂载时自动触发首次加载，改分页后需显式调用
 onMounted(() => {
+  // 带走率分母（方向六）：榜单页曝光按会话去重
+  if (city.value) track('rank_view', { city: city.value })
   loadPage()
 })
 
@@ -296,11 +301,14 @@ function toMap() {
   router.push({ path: '/map', query: { ...route.query } })
 }
 
-/** 榜单分享图：取当前已加载的 Top5（文档 9.2 保存图片） */
+/** 榜单分享图：取当前已加载的 Top5 + 诚实三要素（全榜条数/成熟度/截至日期，方向六批 1） */
 function rankPoster() {
   return renderRankPoster({
     city: city.value,
     items: items.value,
+    count: cityRankCount.value,
+    maturity: maturity.value,
+    updatedAt: generatedAt.value,
     baseUrl: window.location.origin,
   })
 }

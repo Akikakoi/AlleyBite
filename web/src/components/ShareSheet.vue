@@ -40,6 +40,7 @@ import { showToast } from 'vant'
 
 import { downloadBlob, shareOrDownloadImage } from '@/utils/shareImage'
 import { shareLink } from '@/utils/share'
+import { track } from '@/utils/track'
 
 const props = defineProps<{
   show: boolean
@@ -48,6 +49,10 @@ const props = defineProps<{
   url: string
   filename: string
   poster: () => Promise<Blob>
+  /** 埋点动作前缀（方向六）：shop / rank，决定 share_poster_* 与 copy_link_* */
+  kind: 'shop' | 'rank'
+  city?: string
+  restaurantId?: number
 }>()
 
 const emit = defineEmits<{ (e: 'update:show', value: boolean): void }>()
@@ -89,6 +94,10 @@ watch(
 
 function onSave() {
   if (!blob.value) return
+  track(`share_poster_${props.kind}`, {
+    city: props.city,
+    restaurantId: props.restaurantId,
+  })
   saving.value = true
   try {
     downloadBlob(blob.value, props.filename)
@@ -100,10 +109,18 @@ function onSave() {
 
 async function onShareImage() {
   if (!blob.value) return
+  track(`share_poster_${props.kind}`, {
+    city: props.city,
+    restaurantId: props.restaurantId,
+  })
   await shareOrDownloadImage(blob.value, props.filename, props.text || props.title)
 }
 
 async function onCopyLink() {
+  track(`copy_link_${props.kind}`, {
+    city: props.city,
+    restaurantId: props.restaurantId,
+  })
   await shareLink({ title: props.title, text: props.text, url: props.url })
 }
 </script>

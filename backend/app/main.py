@@ -21,6 +21,7 @@ from .services import (
     Extractor,
     FeedbackRateLimited,
     EmailAuthError,
+    TrackRateLimited,
     UgcError,
     UserAuthError,
     add_favorite,
@@ -62,6 +63,7 @@ from .services import (
     pending_reviews_detail,
     rank_share_text,
     recommend_for_user,
+    record_track_event,
     record_view,
     reject_review,
     register_user,
@@ -77,6 +79,7 @@ from .services import (
     send_email_code,
     set_admin_password,
     set_restaurant_status,
+    track_daily_summary,
     update_feedback_status,
     verify_email_code,
     verify_token,
@@ -212,6 +215,15 @@ class UgcReviewRequest(BaseModel):
     """UGC 审核状态流转。"""
 
     status: Literal["approved", "rejected"]
+
+
+class TrackRequest(BaseModel):
+    """行为埋点上报（方向六 榜单可带走）：匿名可写，动作白名单后端校验。"""
+
+    action: str = Field(min_length=1, max_length=32, description="动作名，见 track_service.TRACK_ACTIONS")
+    session_key: str | None = Field(default=None, max_length=64, description="客户端匿名会话 id")
+    city: str | None = Field(default=None, max_length=64, description="城市名（榜单页事件带）")
+    restaurant_id: int | None = Field(default=None, description="店铺 id（单店事件带）")
 
 
 def _client_ip(request: Request) -> str | None:
@@ -811,6 +823,48 @@ def record_view_event(
         raise HTTPException(status_code=404, detail="店铺不存在")
     record_view(session, req.restaurant_id, user.id if user else None)
     return ok({"recorded": True})
+
+
+@app.post("/api/v1/track")
+def track(
+    req: TrackRequest,
+    request: Request,
+    user: User | None = Depends(require_user_optional),
+    session: Session = Depends(get_session),
+):
+    """行为埋点（方向六 榜单可带走）：北极星「榜单带走率」数据源。
+
+    免登录可写（登录则补 user_id）；动作白名单校验，未知动作 422；
+    同 IP 超限 429（超限丢弃只轻微低估 UV，客户端静默忽略）。
+    restaurant_id 不设外键，不做存在性校验：店铺删除后事件仍是历史事实。
+    """
+    try:
+        record_track_event(
+            session,
+            action=req.action,
+            settings=settings,
+            session_key=req.session_key,
+            city=req.city,
+            restaurant_id=req.restaurant_id,
+            user_id=user.id if user else None,
+            ip_hash=hash_ip(_client_ip(request), settings=settings),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except TrackRateLimited:
+        raise HTTPException(status_code=429, detail="上报过于频繁")
+    session.commit()
+    return ok({"recorded": True})
+
+
+@app.get("/api/v1/admin/track/summary")
+def admin_track_summary(
+    days: int = 14,
+    _: AdminUser = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """带走事件日汇总（方向六北极星）：榜单页 UV / 带走 UV / 带走率，按日。"""
+    return ok(track_daily_summary(session, days=days))
 
 
 @app.get("/api/v1/recommend")

@@ -319,6 +319,8 @@
         :url="shareUrl"
         :filename="`${detail.name}.png`"
         :poster="shopPoster"
+        kind="shop"
+        :restaurant-id="detail.restaurant_id"
       />
     </template>
   </div>

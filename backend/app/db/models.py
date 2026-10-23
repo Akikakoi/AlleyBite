@@ -488,3 +488,34 @@ class ViewEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
+
+
+class TrackEvent(Base):
+    """行为埋点（方向六「榜单可带走」2026-10-23）：北极星「榜单带走率」数据源。
+
+    事件型分析表，restaurant_id/city 故意不设外键：事件是历史事实，
+    店铺被合并/删除后事件仍应保留，不做级联清理。
+    session_key 为客户端生成的匿名随机 id（不落任何 PII），按日去重算 UV。
+    动作白名单定义在 services.track_service.TRACK_ACTIONS，客户端只上报已知动作。
+    """
+
+    __tablename__ = "track_event"
+    __table_args__ = (
+        Index("ix_track_event_action_created", "action", "created_at"),
+        Index("ix_track_event_city_created", "city", "created_at"),
+        Index("ix_track_event_ip_created", "ip_hash", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL"), index=True
+    )
+    session_key: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(32))
+    city: Mapped[str | None] = mapped_column(String(64))
+    restaurant_id: Mapped[int | None] = mapped_column(Integer)
+    # 与 feedback 同口径：只落加盐哈希，不存原始 IP（限流与滥用追溯用）
+    ip_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
