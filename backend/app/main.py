@@ -44,11 +44,13 @@ from .services import (
     get_raw_content,
     hash_ip,
     ingest_raw_content,
+    is_city_packed,
     is_favorite,
     issue_token,
     issue_user_token,
     list_audit,
     list_cities,
+    list_city_packs,
     list_feedback,
     list_favorites,
     list_my_ugc,
@@ -79,7 +81,9 @@ from .services import (
     send_email_code,
     set_admin_password,
     set_restaurant_status,
+    subscribe_city_pack,
     track_daily_summary,
+    unsubscribe_city_pack,
     update_feedback_status,
     verify_email_code,
     verify_token,
@@ -188,6 +192,13 @@ class FavoriteRequest(BaseModel):
     """收藏/取消收藏（文档 8.1 favorites / V2.0）。"""
 
     restaurant_id: int = Field(description="店铺 id")
+
+
+class CityPackRequest(BaseModel):
+    """收藏整城/退订（方向六批 2 订阅制）。"""
+
+    city: str = Field(min_length=1, max_length=64, description="城市名")
+    session_key: str | None = Field(default=None, max_length=64, description="客户端匿名会话 id，用于带走率 UV 归并")
 
 
 class EmailSendRequest(BaseModel):
@@ -711,6 +722,68 @@ def favorites_status(
             "favorited": is_favorite(session, user.id, restaurant_id),
         }
     )
+
+
+# --- 按城收藏包（方向六批 2：订阅制，服务端只存 unique(user_id, city)）-------
+
+
+@app.get("/api/v1/city-packs")
+def city_packs_list(
+    user: User = Depends(require_user), session: Session = Depends(get_session)
+):
+    """我的收藏包列表：订阅关系 + 最新快照摘要，打开包时客户端再实时拉全量榜单。"""
+    return ok(list_city_packs(session, user))
+
+
+@app.post("/api/v1/city-packs")
+def city_packs_subscribe(
+    req: CityPackRequest,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """收藏整城；重复订阅幂等返回 created=False。新建订阅落 pack_save 带走事件。"""
+    try:
+        pack, created = subscribe_city_pack(session, user.id, req.city)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if created:
+        # 埋点失败（限流）不影响订阅本身；pack_save 已在白名单，ValueError 不可达
+        try:
+            record_track_event(
+                session,
+                action="pack_save",
+                settings=settings,
+                session_key=req.session_key,
+                city=pack.city,
+                user_id=user.id,
+                ip_hash=hash_ip(_client_ip(request), settings=settings),
+            )
+            session.commit()
+        except TrackRateLimited:
+            session.rollback()
+    return ok({"city": pack.city, "packed": True, "created": created})
+
+
+@app.delete("/api/v1/city-packs/{city}")
+def city_packs_remove(
+    city: str,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """退订收藏包；未订阅时幂等返回 packed=False。"""
+    unsubscribe_city_pack(session, user.id, city)
+    return ok({"city": city, "packed": False})
+
+
+@app.get("/api/v1/city-packs/{city}")
+def city_packs_status(
+    city: str,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """榜单页收藏按钮态查询。"""
+    return ok({"city": city, "packed": is_city_packed(session, user.id, city)})
 
 
 # --- C 端短信登录 / UGC / 推荐（文档 10.2 / 2.2 V2.0）-----------------------

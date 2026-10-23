@@ -46,6 +46,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '我的收藏', requiresAuth: true },
   },
   {
+    path: '/mine/packs',
+    name: 'citypacks',
+    component: () => import('@/views/mine/CityPacksView.vue'),
+    meta: { title: '我的收藏包', requiresAuth: true },
+  },
+  {
     path: '/mine/posts',
     name: 'myposts',
     component: () => import('@/views/mine/MyPostsView.vue'),

@@ -20,6 +20,12 @@
         <span class="mine__entry-arrow">›</span>
       </section>
 
+      <section class="card mine__entry press-feedback hover-tint" @click="router.push('/mine/packs')">
+        <span class="mine__entry-icon">☰</span>
+        <span class="mine__entry-label">我的收藏包</span>
+        <span class="mine__entry-arrow">›</span>
+      </section>
+
       <section class="card mine__entry press-feedback hover-tint" @click="router.push('/mine/posts')">
         <span class="mine__entry-icon">✎</span>
         <span class="mine__entry-label">我的打卡</span>

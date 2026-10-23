@@ -11,11 +11,24 @@
       </div>
       <div class="rank__actions">
         <van-button size="small" round plain @click="toMap">地图</van-button>
+        <van-button
+          size="small"
+          round
+          plain
+          :type="packed ? 'primary' : 'default'"
+          @click="togglePack"
+        >
+          {{ packed ? '已收藏' : '收藏整城' }}
+        </van-button>
         <van-button size="small" round plain type="primary" @click="showShare = true">
           分享
         </van-button>
       </div>
     </header>
+
+    <p v-if="offlineSavedAt" class="rank__offline">
+      离线数据截至 {{ formatDate(offlineSavedAt) }} · 当前为缓存副本
+    </p>
 
     <FilterBar
       :filters="filters"
@@ -107,7 +120,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showConfirmDialog, showToast } from 'vant'
 
+import { fetchCityPackStatus, subscribeCityPack, unsubscribeCityPack } from '@/api/cityPacks'
 import { getRank } from '@/api/rank'
 import { ApiError, isNotFound } from '@/api/request'
 import EmptyState from '@/components/EmptyState.vue'
@@ -116,9 +131,12 @@ import SkeletonGrid from '@/components/SkeletonGrid.vue'
 import ShareSheet from '@/components/ShareSheet.vue'
 import ShopCard from '@/components/ShopCard.vue'
 import { useCityStore } from '@/store/city'
-import type { RankFilters, RankItem } from '@/types'
+import { useUserStore } from '@/store/user'
+import type { RankData, RankFilters, RankItem } from '@/types'
+import { formatDate } from '@/utils/format'
+import { getSessionKey, track } from '@/utils/track'
+import { getToken } from '@/utils/token'
 import { renderRankPoster } from '@/utils/shareImage'
-import { track } from '@/utils/track'
 
 /** 文档 9.2：榜单分页展示，每页 15 条 */
 const PAGE_SIZE = 15
@@ -126,6 +144,7 @@ const PAGE_SIZE = 15
 const route = useRoute()
 const router = useRouter()
 const store = useCityStore()
+const userStore = useUserStore()
 
 const city = ref(String(route.query.city || store.current || ''))
 if (city.value) store.setCity(city.value)
@@ -142,6 +161,10 @@ const showShare = ref(false)
 const cityRankCount = ref(0)
 const maturity = ref<string>('collecting')
 const generatedAt = ref<string | null>(null)
+/** 收藏包按钮态（方向六批 2）：登录用户进页时查询，点击时以请求结果为准 */
+const packed = ref(false)
+/** 离线副本兜底：非空表示当前列表来自 localStorage 缓存（断网降级） */
+const offlineSavedAt = ref<string | null>(null)
 const MATURITY_LABELS: Record<string, string> = {
   deep: '深度覆盖',
   initial: '初步覆盖',
@@ -182,6 +205,7 @@ if (!city.value) {
 onMounted(() => {
   // 带走率分母（方向六）：榜单页曝光按会话去重
   if (city.value) track('rank_view', { city: city.value })
+  if (city.value && getToken()) refreshPackStatus()
   loadPage()
 })
 
@@ -212,6 +236,41 @@ function reset() {
 /** 请求序号：快速连点时丢弃过期响应，避免旧页覆盖新页（表现为"点了没反应"） */
 let requestSeq = 0
 
+function applyRankData(data: RankData) {
+  items.value = data.items
+  total.value = data.total
+  cityRankCount.value = data.city_rank_count ?? data.total
+  maturity.value = data.maturity ?? 'collecting'
+  generatedAt.value = data.generated_at
+  mergeOptions(data.items)
+}
+
+/** 榜单离线副本（方向六批 2）：每次成功加载落 localStorage，收藏包断网时兜底呈现 */
+const RANK_CACHE_PREFIX = 'alleybite.rank_cache.'
+
+interface RankCacheEntry {
+  saved_at: string
+  data: RankData
+}
+
+function writeRankCache(name: string, data: RankData) {
+  try {
+    const entry: RankCacheEntry = { saved_at: new Date().toISOString(), data }
+    localStorage.setItem(RANK_CACHE_PREFIX + name, JSON.stringify(entry))
+  } catch {
+    // 存储不可用/写满：离线兜底随之不可用，不影响在线流程
+  }
+}
+
+function readRankCache(name: string): RankCacheEntry | null {
+  try {
+    const raw = localStorage.getItem(RANK_CACHE_PREFIX + name)
+    return raw ? (JSON.parse(raw) as RankCacheEntry) : null
+  } catch {
+    return null
+  }
+}
+
 async function loadPage() {
   if (!city.value) {
     loading.value = false
@@ -227,23 +286,28 @@ async function loadPage() {
       ...filters.value,
     })
     if (seq !== requestSeq) return
-    items.value = data.items
-    total.value = data.total
-    cityRankCount.value = data.city_rank_count ?? data.total
-    maturity.value = data.maturity ?? 'collecting'
-    generatedAt.value = data.generated_at
-    mergeOptions(data.items)
+    applyRankData(data)
+    offlineSavedAt.value = null
+    writeRankCache(city.value, data)
     state.value = 'ready'
   } catch (err) {
     if (seq !== requestSeq) return
     if (isNotFound(err)) {
       state.value = 'collecting'
     } else {
-      state.value = 'error'
-      errorMessage.value =
-        err instanceof ApiError ? err.message : '加载失败，请稍后重试'
+      // 网络故障但有离线副本：降级呈现缓存（收藏包离线打开路径），并显著标注
+      const cached = readRankCache(city.value)
+      if (cached) {
+        applyRankData(cached.data)
+        offlineSavedAt.value = cached.saved_at
+        state.value = 'ready'
+      } else {
+        state.value = 'error'
+        errorMessage.value =
+          err instanceof ApiError ? err.message : '加载失败，请稍后重试'
+      }
     }
-    items.value = []
+    if (state.value !== 'ready') items.value = []
   } finally {
     if (seq === requestSeq) loading.value = false
   }
@@ -299,6 +363,50 @@ function openDetail(item: RankItem) {
 
 function toMap() {
   router.push({ path: '/map', query: { ...route.query } })
+}
+
+async function refreshPackStatus() {
+  try {
+    packed.value = (await fetchCityPackStatus(city.value)).packed
+  } catch {
+    // 按钮态拉取失败静默：点击时再以请求结果为准
+  }
+}
+
+/** 收藏整城 / 退订（方向六批 2）；未登录引导去登录并回跳本页 */
+async function togglePack() {
+  if (!getToken()) {
+    showToast('登录后可收藏整城榜单')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+  if (packed.value) {
+    try {
+      await showConfirmDialog({
+        title: '退订收藏包',
+        message: `不再收藏「${city.value}」榜单？离线副本仍会保留在本机。`,
+      })
+    } catch {
+      return
+    }
+    try {
+      await unsubscribeCityPack(city.value)
+      packed.value = false
+      showToast('已退订')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) userStore.logout()
+      showToast(err instanceof ApiError ? err.message : '操作失败，请稍后重试')
+    }
+    return
+  }
+  try {
+    const res = await subscribeCityPack(city.value, getSessionKey())
+    packed.value = true
+    showToast(res.created ? '已收藏整城，可在「我的」查看' : '已在收藏包中')
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) userStore.logout()
+    showToast(err instanceof ApiError ? err.message : '操作失败，请稍后重试')
+  }
 }
 
 /** 榜单分享图：取当前已加载的 Top5 + 诚实三要素（全榜条数/成熟度/截至日期，方向六批 1） */
@@ -393,6 +501,14 @@ function shareUrl(): string {
   font-size: 11px;
   line-height: 1.6;
   opacity: 0.7;
+}
+
+/* 离线副本横幅：断网降级呈现时显著标注数据陈旧度（方向六批 2） */
+.rank__offline {
+  margin: 8px 4px 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--color-warn);
 }
 
 .rank__actions {

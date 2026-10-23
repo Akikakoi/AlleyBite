@@ -419,6 +419,28 @@ class Favorite(Base):
     restaurant: Mapped[Restaurant] = relationship()
 
 
+class CityPack(Base):
+    """按城收藏包（方向六批 2）：订阅制只存 unique(user_id, city) 关系，不复制榜单数据。
+
+    打开包 = 客户端实时拉最新快照（快照制天然稳定、随重建更新），
+    离线副本是客户端缓存行为，不是服务端的数据复制。
+    """
+
+    __tablename__ = "city_pack"
+    __table_args__ = (
+        UniqueConstraint("user_id", "city", name="uq_city_pack_user_city"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), index=True
+    )
+    city: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+
 class EmailCode(Base):
     """邮箱验证码（文档 10.2 邮箱验证码登录 / V2.0）。
 

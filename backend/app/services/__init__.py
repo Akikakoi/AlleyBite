@@ -34,6 +34,12 @@ from .cache import RankCache, make_rank_cache
 from .extract_pipeline import ExtractionRunResult, extract_raw_content
 from .extractor import Extractor
 from .favorite_service import add_favorite, is_favorite, list_favorites, remove_favorite
+from .city_pack_service import (
+    is_city_packed,
+    list_city_packs,
+    subscribe_city_pack,
+    unsubscribe_city_pack,
+)
 from .feedback_service import (
     FEEDBACK_TYPES,
     FeedbackRateLimited,
@@ -151,6 +157,10 @@ __all__ = [
     "crawl_overview",
     "build_admin_stats",
     "create_feedback",
+    "is_city_packed",
+    "list_city_packs",
+    "subscribe_city_pack",
+    "unsubscribe_city_pack",
     "ensure_bootstrap_admin",
     "estimate_tokens",
     "extract_raw_content",
