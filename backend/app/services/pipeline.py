@@ -16,7 +16,7 @@ from .cache import RankCache
 from .extract_pipeline import extract_raw_content
 from .extractor import Extractor
 from .metrics import llm_usage_delta, llm_usage_snapshot
-from .rank_service import build_rank_snapshot, city_maturity
+from .rank_service import DEFAULT_TOP_N, build_rank_snapshot, city_maturity
 from .scoring import to_utc
 
 
@@ -68,7 +68,7 @@ def run_city_pipeline(
             city_hint,
             settings=settings,
             now=started,
-            top_n=top_n or 50,
+            top_n=top_n or DEFAULT_TOP_N,
             cache=cache,
         )
 

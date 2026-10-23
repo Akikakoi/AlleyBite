@@ -22,7 +22,8 @@ from .scoring_service import collect_shop_scores, score_one_restaurant
 
 # score-v3：方向四第 3 批——贝叶斯后接存活降权与老店加成，closed 店不进榜
 ALGORITHM_VER = "score-v3"
-DEFAULT_TOP_N = 50
+# 单城榜单快照条数：M1 验收要求"单城有效店铺 ≥100"，取 120 留余量（2026-10-23 统一，此前手动重建路径默认 50 会缩榜）
+DEFAULT_TOP_N = 120
 _MAX_KEYWORDS = 5
 _MAX_DISHES = 5
 _MAX_SOURCES = 3

@@ -18,9 +18,7 @@ from app.core.config import get_settings  # noqa: E402
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.services import make_rank_cache, run_city_pipeline  # noqa: E402
 from app.services import list_city_names  # noqa: E402
-
-# 单城榜单快照条数：M1 验收要求"单城有效店铺 ≥100"，故取 120 留余量
-TOP_N = 120
+from app.services.rank_service import DEFAULT_TOP_N  # noqa: E402
 
 
 def main() -> int:
@@ -47,7 +45,7 @@ def main() -> int:
         for name in names:
             try:
                 job = run_city_pipeline(
-                    session, name, settings=settings, cache=cache, top_n=TOP_N
+                    session, name, settings=settings, cache=cache, top_n=DEFAULT_TOP_N
                 )
             except Exception as exc:  # noqa: BLE001
                 print(f"[{name}] 失败：{exc}")
