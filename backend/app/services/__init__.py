@@ -115,6 +115,13 @@ from .track_service import (
     record_track_event,
     track_daily_summary,
 )
+from .trip_service import (
+    add_trip_item,
+    get_trip_item,
+    list_trip_items,
+    remove_trip_item,
+    visit_trip_item,
+)
 
 __all__ = [
     "AdminAuthError",
@@ -208,6 +215,11 @@ __all__ = [
     "set_admin_password",
     "set_restaurant_status",
     "track_daily_summary",
+    "add_trip_item",
+    "get_trip_item",
+    "list_trip_items",
+    "remove_trip_item",
+    "visit_trip_item",
     "EmailAuthError",
     "update_feedback_status",
     "UserAuthError",

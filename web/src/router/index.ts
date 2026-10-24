@@ -52,6 +52,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '我的收藏包', requiresAuth: true },
   },
   {
+    path: '/mine/trips',
+    name: 'triplist',
+    component: () => import('@/views/mine/TripsView.vue'),
+    meta: { title: '行前清单', requiresAuth: true },
+  },
+  {
     path: '/mine/posts',
     name: 'myposts',
     component: () => import('@/views/mine/MyPostsView.vue'),

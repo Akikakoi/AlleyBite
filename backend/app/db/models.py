@@ -441,6 +441,35 @@ class CityPack(Base):
     )
 
 
+class TripItem(Base):
+    """行前清单（方向六批 3）：勾店/核销一体，unique(user_id, restaurant_id)。
+
+    勾店 = 写入 planned；旅途核销 = 标记 visited（visited_at 取核销时刻）。
+    核销后引导发打卡，approved 打卡落地为存活证据（与打卡补证咬合）。
+    店铺下架后条目随级联删除。
+    """
+
+    __tablename__ = "trip_item"
+    __table_args__ = (
+        UniqueConstraint("user_id", "restaurant_id", name="uq_trip_user_restaurant"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), index=True
+    )
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurant.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="planned")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    visited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    restaurant: Mapped[Restaurant] = relationship()
+
+
 class EmailCode(Base):
     """邮箱验证码（文档 10.2 邮箱验证码登录 / V2.0）。
 

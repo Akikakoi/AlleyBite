@@ -26,6 +26,7 @@ from .services import (
     UserAuthError,
     add_favorite,
     add_manual_alias,
+    add_trip_item,
     align_mentions,
     authenticate,
     authenticate_user,
@@ -42,6 +43,7 @@ from .services import (
     extract_raw_content,
     get_rank,
     get_raw_content,
+    get_trip_item,
     hash_ip,
     ingest_raw_content,
     is_city_packed,
@@ -57,6 +59,7 @@ from .services import (
     list_pending_reviews,
     list_restaurants_admin,
     list_restaurant_ugc,
+    list_trip_items,
     list_ugc_admin,
     login_or_register_via_email,
     make_rank_cache,
@@ -70,6 +73,7 @@ from .services import (
     reject_review,
     register_user,
     remove_favorite,
+    remove_trip_item,
     render_share_html,
     resolve_base_url,
     resolve_og_image,
@@ -88,6 +92,7 @@ from .services import (
     verify_email_code,
     verify_token,
     verify_user_token,
+    visit_trip_item,
     write_audit,
 )
 from .services.metrics import (
@@ -198,6 +203,19 @@ class CityPackRequest(BaseModel):
     """收藏整城/退订（方向六批 2 订阅制）。"""
 
     city: str = Field(min_length=1, max_length=64, description="城市名")
+    session_key: str | None = Field(default=None, max_length=64, description="客户端匿名会话 id，用于带走率 UV 归并")
+
+
+class TripRequest(BaseModel):
+    """勾店入清单（方向六批 3 行前清单）。"""
+
+    restaurant_id: int = Field(description="店铺 id")
+    session_key: str | None = Field(default=None, max_length=64, description="客户端匿名会话 id，用于带走率 UV 归并")
+
+
+class TripVisitRequest(BaseModel):
+    """旅途核销（方向六批 3）。"""
+
     session_key: str | None = Field(default=None, max_length=64, description="客户端匿名会话 id，用于带走率 UV 归并")
 
 
@@ -784,6 +802,122 @@ def city_packs_status(
 ):
     """榜单页收藏按钮态查询。"""
     return ok({"city": city, "packed": is_city_packed(session, user.id, city)})
+
+
+# --- 行前清单（方向六批 3：勾店/核销一体，trip_save/trip_check 进带走口径）-----
+
+
+@app.get("/api/v1/trip-items")
+def trip_items_list(
+    user: User = Depends(require_user), session: Session = Depends(get_session)
+):
+    """我的行前清单：勾店时间倒序，附店铺摘要与状态；按城分组由客户端做。"""
+    return ok(list_trip_items(session, user))
+
+
+@app.post("/api/v1/trip-items")
+def trip_items_add(
+    req: TripRequest,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """勾店入清单；重复勾店幂等返回 created=False。新建勾店落 trip_save 带走事件。"""
+    try:
+        item, created = add_trip_item(session, user.id, req.restaurant_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if created:
+        # 埋点失败（限流）不影响勾店本身；trip_save 已在白名单，ValueError 不可达
+        try:
+            record_track_event(
+                session,
+                action="trip_save",
+                settings=settings,
+                session_key=req.session_key,
+                city=item.restaurant.city.name if item.restaurant.city else None,
+                restaurant_id=item.restaurant_id,
+                user_id=user.id,
+                ip_hash=hash_ip(_client_ip(request), settings=settings),
+            )
+            session.commit()
+        except TrackRateLimited:
+            session.rollback()
+    return ok(
+        {
+            "restaurant_id": item.restaurant_id,
+            "saved": True,
+            "created": created,
+            "status": item.status,
+        }
+    )
+
+
+@app.post("/api/v1/trip-items/{restaurant_id}/visit")
+def trip_items_visit(
+    restaurant_id: int,
+    req: TripVisitRequest,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """旅途核销：planned→visited；已是 visited 幂等返回 updated=False。核销成功落 trip_check。"""
+    try:
+        item, updated = visit_trip_item(session, user.id, restaurant_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if updated:
+        # trip_check 走带走口径（设计方案 2.1）：核销是榜单内容的最终去向
+        try:
+            record_track_event(
+                session,
+                action="trip_check",
+                settings=settings,
+                session_key=req.session_key,
+                city=item.restaurant.city.name if item.restaurant.city else None,
+                restaurant_id=item.restaurant_id,
+                user_id=user.id,
+                ip_hash=hash_ip(_client_ip(request), settings=settings),
+            )
+            session.commit()
+        except TrackRateLimited:
+            session.rollback()
+    return ok(
+        {
+            "restaurant_id": item.restaurant_id,
+            "status": item.status,
+            "visited": True,
+            "updated": updated,
+        }
+    )
+
+
+@app.delete("/api/v1/trip-items/{restaurant_id}")
+def trip_items_remove(
+    restaurant_id: int,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """把店移出清单；未勾店时幂等返回 saved=False。"""
+    remove_trip_item(session, user.id, restaurant_id)
+    return ok({"restaurant_id": restaurant_id, "saved": False})
+
+
+@app.get("/api/v1/trip-items/{restaurant_id}")
+def trip_items_status(
+    restaurant_id: int,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """详情页勾店按钮态查询。"""
+    item = get_trip_item(session, user.id, restaurant_id)
+    return ok(
+        {
+            "restaurant_id": restaurant_id,
+            "saved": item is not None,
+            "status": item.status if item else None,
+        }
+    )
 
 
 # --- C 端短信登录 / UGC / 推荐（文档 10.2 / 2.2 V2.0）-----------------------

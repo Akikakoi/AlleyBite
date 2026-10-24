@@ -18,14 +18,16 @@ from ..db.models import TrackEvent
 # 浏览类动作（UV 分母）：榜单页曝光
 VIEW_ACTIONS = ("rank_view",)
 # 带走类动作（UV 分子）：把榜单内容带离站内的行为。
-# pack_save 批 2 追加（服务端订阅成功时落，见 city_pack 路由）；
-# 批 3 将追加 trip_save / trip_check，口径见设计方案 2.1。
+# pack_save 批 2 追加、trip_save/trip_check 批 3 追加（服务端动作成功时落，
+# 见 city_pack / trip_item 路由），口径见设计方案 2.1。
 TAKEAWAY_ACTIONS = (
     "share_poster_shop",
     "share_poster_rank",
     "copy_link_rank",
     "copy_link_shop",
     "pack_save",
+    "trip_save",
+    "trip_check",
 )
 TRACK_ACTIONS = VIEW_ACTIONS + TAKEAWAY_ACTIONS
 
