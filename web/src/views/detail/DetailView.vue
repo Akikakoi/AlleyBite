@@ -534,28 +534,37 @@ function navigate() {
 }
 
 function openSource(source: SourceRef) {
-  router.push({
-    path: '/source',
-    query: {
-      url: source.source_url ?? '',
-      source: source.source,
-      title: source.title ?? '',
-    },
-  })
+  // 新标签页打开来源提示页，详情页保持在原位
+  window.open(
+    router.resolve({
+      path: '/source',
+      query: {
+        url: source.source_url ?? '',
+        source: source.source,
+        title: source.title ?? '',
+      },
+    }).href,
+    '_blank',
+    'noopener',
+  )
 }
 
 /** 大众点评评价直达（方向二）：拼好的搜索链接，经站内第三方提示页跳转 */
 function openReviews() {
   const target = detail.value
   if (!target?.review_url) return
-  router.push({
-    path: '/source',
-    query: {
-      url: target.review_url,
-      source: 'dianping',
-      title: target.name,
-    },
-  })
+  window.open(
+    router.resolve({
+      path: '/source',
+      query: {
+        url: target.review_url,
+        source: 'dianping',
+        title: target.name,
+      },
+    }).href,
+    '_blank',
+    'noopener',
+  )
 }
 
 /** 店铺分享图（文档 9.2 保存图片） */

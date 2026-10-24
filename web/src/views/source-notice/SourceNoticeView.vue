@@ -29,11 +29,13 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { sourceLabel } from '@/utils/format'
+import { desktopUrl } from '@/utils/desktopUrl'
 
 const route = useRoute()
 const router = useRouter()
 
 const url = computed(() => String(route.query.url || ''))
+const desktop = computed(() => desktopUrl(url.value))
 const sourceName = computed(() =>
   route.query.source ? String(route.query.source) : '',
 )
@@ -41,7 +43,8 @@ const title = computed(() => (route.query.title ? String(route.query.title) : ''
 
 function go() {
   if (!url.value) return
-  window.open(url.value, '_blank', 'noopener')
+  // 有桌面版映射的来源默认开桌面页（电脑上阅读体验更好），其余开原链接
+  window.open(desktop.value || url.value, '_blank', 'noopener')
 }
 </script>
 
