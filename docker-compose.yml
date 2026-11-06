@@ -65,12 +65,14 @@ services:
       - "postgres"
       - "-c"
       - "wal_level=replica"
-      - "-c"
-      - "archive_mode=on"
-      - "-c"
-      - "archive_timeout=300"
-      - "-c"
-      - "archive_command=mkdir -p /var/lib/postgresql/wal-archive && test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f"
+      # WAL 归档已关闭（2026-10-25）：pgwal 卷被归档段撑到 3.5GB，开发库不需要 PITR。
+      # 如需恢复增量归档，取消以下注释：
+      # - "-c"
+      # - "archive_mode=on"
+      # - "-c"
+      # - "archive_timeout=300"
+      # - "-c"
+      # - "archive_command=mkdir -p /var/lib/postgresql/wal-archive && test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alleybite}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alleybite}
