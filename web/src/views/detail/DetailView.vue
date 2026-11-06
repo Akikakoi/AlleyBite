@@ -65,6 +65,17 @@
         </div>
       </section>
 
+      <!-- 同品牌口碑提示（证据显式化）：中性弱提示，未证实的事不定性 -->
+      <section
+        v-if="detail.brand_evidence_notice"
+        class="card detail__block detail__brand-notice"
+      >
+        <p class="detail__brand-notice-text">
+          <van-icon name="info-o" class="detail__brand-notice-icon" />
+          <span>{{ brandNoticeText }}</span>
+        </p>
+      </section>
+
       <section v-if="detail.reasons.length" class="card detail__block">
         <h2 class="detail__label">为什么上榜</h2>
         <ul class="detail__reasons">
@@ -389,6 +400,17 @@ const tenureYears = computed(() => {
 })
 const tenureSinceYear = computed(() => detail.value?.first_mentioned_at?.slice(0, 4) ?? '')
 
+// 同品牌口碑提示文案：有同城兄弟实体时报店数，否则只报口碑口径
+const brandNoticeText = computed(() => {
+  const notice = detail.value?.brand_evidence_notice
+  if (!notice) return ''
+  const { sibling_count: siblings, unlocated_mentions: unlocated } = notice
+  if (siblings > 0) {
+    return `该品牌在同城还有 ${siblings} 家门店，其中 ${unlocated} 条口碑未注明分店，部分评价可能来自其他门店`
+  }
+  return `有 ${unlocated} 条口碑未注明是哪家分店，部分评价可能来自同品牌其他门店`
+})
+
 // 存活状态徽标（方向四第 4 批）：suspect 用中性灰弱提示，不用红色警示——
 // 未证实的事不定性；closed 才明确展示歇业
 const livenessBadge = computed<{ text: string; class: string; hint?: string } | null>(() => {
@@ -686,6 +708,25 @@ onMounted(load)
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 同品牌口碑提示：与 suspect 徽标同哲学——中性灰弱提示，不用警示色 */
+.detail__brand-notice {
+  padding: 12px 16px;
+}
+
+.detail__brand-notice-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-text-sub);
+  line-height: 1.6;
+}
+
+.detail__brand-notice-icon {
+  margin-top: 3px;
+  flex-shrink: 0;
 }
 
 .detail__reasons {

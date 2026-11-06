@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..core.config import Settings, get_settings
 from ..db.models import City, Mention as MentionRow, RankSnapshot, Restaurant
+from .brand_evidence import build_brand_evidence_notice
 from .cache import RankCache
 from .external_links import build_dianping_search_url
 from .open_hours import is_open_now
@@ -212,6 +213,8 @@ def build_restaurant_detail(
         "praise_keywords": enriched["praise_keywords"],
         "complaints": enriched["complaints"],
         "recommended_dishes": enriched["recommended_dishes"],
+        # 同品牌口碑提示（证据显式化）：同城同品牌多店且口碑未注明分店时给出，否则 None
+        "brand_evidence_notice": build_brand_evidence_notice(session, restaurant),
         "sources": enriched["sources"],
     }
 

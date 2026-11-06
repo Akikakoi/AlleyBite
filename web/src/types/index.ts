@@ -96,6 +96,17 @@ export interface RestaurantDetail {
   praise_keywords: string[]
   complaints: string[]
   recommended_dishes: string[]
+  /** 同品牌口碑提示（证据显式化）：存在无法证明属于本店的口碑时给出 */
+  brand_evidence_notice?: {
+    /** 同城同品牌兄弟实体数量（渠道 A；可为 0） */
+    sibling_count: number
+    /** 未注明地址（无法证明是哪家分店）的口碑条数 */
+    unlocated_mentions: number
+    /** 提及名带分店词且与本店不同的口碑条数（渠道 B） */
+    branch_mentions: number
+    /** 口碑总条数 */
+    mention_count: number
+  } | null
   sources: SourceRef[]
 }
 

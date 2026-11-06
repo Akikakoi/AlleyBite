@@ -8,9 +8,10 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.db.base import Base
 from app.db.models import Mention as MentionRow, RawContent, Restaurant
-from app.services.alignment import align_mentions
+from app.services.alignment import align_mentions, get_or_create_city
 from app.services.extract_pipeline import extract_raw_content
 from app.services.ingest import compute_content_hash, ingest_raw_content
+from app.services.normalize import normalize_shop_name
 from app.services.pipeline import list_cities
 from app.services.rank_service import (
     build_rank_snapshot,
@@ -193,3 +194,108 @@ def test_list_cities_union_hint_and_city(session):
     # 产品定位（2026-10-23）：成熟度/更新时间/证据数随快照与提及产出
     assert active[0]["maturity"] == "collecting"  # 1 条 < 初始覆盖阈值 5
     assert active[0]["updated_at"] is not None
+
+
+# --- 同品牌口碑提示（证据显式化 2026-11-06）----------------------------------
+
+def _seed_restaurant(session, city, name) -> Restaurant:
+    city_row = get_or_create_city(session, city)
+    row = Restaurant(
+        city_id=city_row.id, name=name, name_norm=normalize_shop_name(name)
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _attach_mention(session, restaurant: Restaurant, *, address=None, shop=None) -> MentionRow:
+    """直接落一条挂到指定店的 mention（绕过对齐，精确控制店名与地址有无）。"""
+    _counter["n"] += 1
+    rc = RawContent(
+        source="forum",
+        content_hash=compute_content_hash(f"brand-{_counter['n']}"),
+        raw_text="x",
+        city_hint=restaurant.city.name,
+        status="extracted",
+    )
+    session.add(rc)
+    session.flush()
+    mention = MentionRow(
+        raw_content_id=rc.id,
+        restaurant_id=restaurant.id,
+        shop_name_raw=shop or restaurant.name,
+        address_text=address,
+        sentiment="positive",
+        is_recommendation=True,
+    )
+    session.add(mention)
+    session.flush()
+    return mention
+
+
+def test_brand_evidence_notice_triggers_for_unlocated_branch_mentions(session):
+    one = _seed_restaurant(session, "成都", "乐三姐飘香馆一店")
+    _seed_restaurant(session, "成都", "乐三姐飘香馆二店")
+    _attach_mention(session, one)  # 无地址 → 无法证明是哪家分店
+    session.commit()
+
+    detail = build_restaurant_detail(session, one.id, settings=make_settings(), now=NOW)
+    notice = detail["brand_evidence_notice"]
+    assert notice is not None
+    assert notice["sibling_count"] == 1
+    assert notice["unlocated_mentions"] == 1
+    assert notice["mention_count"] == 1
+
+
+def test_brand_evidence_notice_triggers_for_branch_named_mention(session):
+    # 方向五核心场景：分店无独立实体，"二店"口碑被归并进"一店"条目（渠道 B）
+    one = _seed_restaurant(session, "成都", "乐三姐飘香馆一店")
+    _attach_mention(session, one, shop="乐三姐飘香馆二店")
+    session.commit()
+
+    detail = build_restaurant_detail(session, one.id, settings=make_settings(), now=NOW)
+    notice = detail["brand_evidence_notice"]
+    assert notice is not None
+    assert notice["sibling_count"] == 0
+    assert notice["branch_mentions"] == 1
+
+
+def test_brand_evidence_notice_silent_for_bare_brand_nickname(session):
+    # 裸品牌简称（无分店词）太常见，刻意不触发，避免横幅噪音
+    one = _seed_restaurant(session, "成都", "乐三姐飘香馆一店")
+    _attach_mention(session, one, shop="乐三姐飘香馆")
+    session.commit()
+
+    detail = build_restaurant_detail(session, one.id, settings=make_settings(), now=NOW)
+    assert detail["brand_evidence_notice"] is None
+
+
+def test_brand_evidence_notice_silent_without_siblings(session):
+    one = _seed_restaurant(session, "成都", "明婷饭店")
+    _attach_mention(session, one)
+    session.commit()
+
+    detail = build_restaurant_detail(session, one.id, settings=make_settings(), now=NOW)
+    assert detail["brand_evidence_notice"] is None
+
+
+def test_brand_evidence_notice_silent_when_all_mentions_located(session):
+    one = _seed_restaurant(session, "成都", "乐三姐飘香馆一店")
+    _seed_restaurant(session, "成都", "乐三姐飘香馆二店")
+    # 全部口碑带地址：对齐时可按地址消歧，不提示
+    _attach_mention(session, one, address="成都市青羊区同心路1号")
+    _attach_mention(session, one, shop="乐三姐飘香馆二店", address="同心路1号附2号")
+    session.commit()
+
+    detail = build_restaurant_detail(session, one.id, settings=make_settings(), now=NOW)
+    assert detail["brand_evidence_notice"] is None
+
+
+def test_brand_evidence_notice_ignores_cross_city_siblings(session):
+    one = _seed_restaurant(session, "成都", "乐三姐飘香馆一店")
+    _seed_restaurant(session, "重庆", "乐三姐飘香馆二店")  # 跨城同品牌：不算兄弟店
+    _attach_mention(session, one)
+    session.commit()
+
+    detail = build_restaurant_detail(session, one.id, settings=make_settings(), now=NOW)
+    assert detail["brand_evidence_notice"] is None
