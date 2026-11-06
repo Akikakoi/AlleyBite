@@ -119,9 +119,11 @@ def test_rate_limit_window_expires(session):
 # --- 服务层：日汇总 ----------------------------------------------------------------
 
 
-def _seed_summary_events(session):
-    today = NOW
-    yesterday = NOW - timedelta(days=1)
+def _seed_summary_events(session, now=NOW):
+    # 默认种在固定 NOW 供服务层断言具体日期；走 HTTP 端点的用例传真实当前时间——
+    # 端点用真实 now 取 14 天窗口，固定日期会在两周后滑出窗口（时间炸弹）
+    today = now
+    yesterday = now - timedelta(days=1)
     events = [
         # 今天：会话 s1 两次浏览 + 一次带走 → UV 去重
         (today, "rank_view", "s1"),
@@ -213,7 +215,8 @@ def test_track_summary_requires_admin(session, client):
 
 
 def test_track_summary_with_admin(session, client):
-    _seed_summary_events(session)
+    # 端点内部用真实 now 切 14 天窗口，种数据必须跟着真实时钟走才不会过期
+    _seed_summary_events(session, now=datetime.now(timezone.utc))
     set_admin_password(
         session, "admin", "super-secret-pw", settings=app_main.settings
     )
