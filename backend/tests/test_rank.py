@@ -119,6 +119,33 @@ def test_build_rank_snapshot_orders_and_filters_excluded(session):
     }
 
 
+def test_build_rank_snapshot_resorts_after_smooth(session):
+    """score-v3.1 回归：平滑/存活调整改分后必须按最终分重排。
+
+    场景：乙店更便宜（打分略高于甲店），但 liveness=suspect 在平滑之后被
+    ×0.9 降权，最终分低于甲店。旧实现按平滑前顺序切片，会出现名次与
+    分数倒挂（乙店在前、分数更低）。
+    """
+    settings = make_settings()
+    _seed_mention(session, "甲店", sentiment="positive")
+    _seed_mention(session, "乙店", sentiment="positive")
+    align_mentions(session, settings=settings)
+    for name, price, liveness in (("甲店", 100.0, "active"), ("乙店", 90.0, "suspect")):
+        restaurant = session.scalar(select(Restaurant).where(Restaurant.name == name))
+        restaurant.avg_price = price
+        restaurant.liveness = liveness
+    session.commit()
+
+    snapshot = build_rank_snapshot(session, "成都", settings=settings, now=NOW)
+    session.commit()
+
+    items = snapshot.items
+    assert [i["name"] for i in items] == ["甲店", "乙店"]
+    scores = [i["score"] for i in items]
+    assert scores == sorted(scores, reverse=True)  # 名次与分数不倒挂
+    assert scores[0] > scores[1]
+
+
 def test_get_rank_pagination_and_filters(session):
     settings = make_settings()
     specs = [

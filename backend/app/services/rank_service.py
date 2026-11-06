@@ -20,8 +20,10 @@ from .open_hours import is_open_now
 from .scoring import apply_bayesian_smooth, apply_liveness_and_tenure, to_utc
 from .scoring_service import collect_shop_scores, score_one_restaurant
 
-# score-v3：方向四第 3 批——贝叶斯后接存活降权与老店加成，closed 店不进榜
-ALGORITHM_VER = "score-v3"
+# score-v3.1：方向四第 3 批——贝叶斯后接存活降权与老店加成，closed 店不进榜；
+# 消融实验（2026-11-06）发现 v3 按平滑前分数切片、平滑/加成改分后不重排，
+# 名次与展示分口径脱节（16 城 439 个错位），v3.1 改为按最终分重排后再切 Top N
+ALGORITHM_VER = "score-v3.1"
 # 单城榜单快照条数：M1 验收要求"单城有效店铺 ≥100"，取 120 留余量（2026-10-23 统一，此前手动重建路径默认 50 会缩榜）
 DEFAULT_TOP_N = 120
 _MAX_KEYWORDS = 5
@@ -245,7 +247,11 @@ def build_rank_snapshot(
     apply_bayesian_smooth(scores, settings.score_bayes_prior)
     # 方向四第 3 批：平均之后接存活降权与老店加成（不被先验稀释）
     apply_liveness_and_tenure(scores, settings=settings)
-    ranked = [s for s in scores if s.restaurant_id is not None and not s.excluded][:top_n]
+    # 按最终分（平滑+加成后）重排再切 Top N：展示分与排序口径一致（score-v3.1）
+    ranked = sorted(
+        (s for s in scores if s.restaurant_id is not None and not s.excluded),
+        key=lambda s: (-s.score, s.shop_name),
+    )[:top_n]
 
     total = len(ranked)
     items = []
