@@ -1618,9 +1618,15 @@ def share_rank(
     city: str, request: Request, session: Session = Depends(get_session)
 ):
     base = resolve_base_url(request, settings)
-    data = get_rank(session, city, page=1, page_size=3, cache=rank_cache)
-    items = (data or {}).get("items") or []
-    title, description = rank_share_text(city, items)
+    data = get_rank(session, city, page=1, page_size=3, cache=rank_cache) or {}
+    items = data.get("items") or []
+    title, description = rank_share_text(
+        city,
+        items,
+        maturity=data.get("maturity"),
+        city_rank_count=data.get("city_rank_count"),
+        generated_at=data.get("generated_at"),
+    )
     return HTMLResponse(
         render_share_html(
             title=title,

@@ -10,11 +10,20 @@ nginx 识别爬虫 UA 后把 `/detail/:id`、`/rank` 分流到这里，返回带
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from html import escape
 
 from ..core.config import Settings
 
 _DESCRIPTION_LIMIT = 110
+
+# 与图卡同口径（方向六批 1）：薄城转发前先让用户看到数据厚度
+_MATURITY_TEXT = {
+    "deep": "证据充足",
+    "initial": "数据较薄 · 持续补证中",
+    "collecting": "新开城 · 收录中",
+}
+_CN_TZ = timezone(timedelta(hours=8))
 
 
 def resolve_base_url(request, settings: Settings) -> str:
@@ -51,6 +60,22 @@ def _format_price(value) -> str | None:
     return f"¥{num:.0f}" if num.is_integer() else f"¥{num:.1f}"
 
 
+def _format_day(value: str | datetime | None) -> str | None:
+    """ISO 时间 → 「M-D」（北京时间，与图卡一致）；解析失败返回 None。"""
+    if not value:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=_CN_TZ)
+    else:
+        value = value.astimezone(_CN_TZ)
+    return f"{value.month}-{value.day}"
+
+
 def restaurant_share_text(detail: dict) -> tuple[str, str]:
     """店铺详情 → (标题, 摘要)。"""
     name = detail.get("name") or "苍蝇馆子"
@@ -74,12 +99,37 @@ def restaurant_share_text(detail: dict) -> tuple[str, str]:
     return title, _clip(description or "多源公开数据聚合的苍蝇馆子榜单")
 
 
-def rank_share_text(city: str, items: list[dict]) -> tuple[str, str]:
-    """城市榜单 → (标题, 摘要)：取 Top3 店名做摘要。"""
+def rank_share_text(
+    city: str,
+    items: list[dict],
+    *,
+    maturity: str | None = None,
+    city_rank_count: int | None = None,
+    generated_at: str | datetime | None = None,
+) -> tuple[str, str]:
+    """城市榜单 → (标题, 摘要)：条数 + 成熟度 + 截至日期 + Top3。
+
+    成熟度与图卡同口径（方向六批 1）：薄城在预览里就说明数据厚度，
+    避免转发后被误读成「大而全」。
+    """
     title = f"{city}苍蝇馆子榜｜本地人才知道的宝藏小店"
+
+    facts: list[str] = []
+    if city_rank_count:
+        facts.append(f"全榜 {city_rank_count} 家")
+    maturity_text = _MATURITY_TEXT.get(maturity or "")
+    if maturity_text:
+        facts.append(maturity_text)
+    day = _format_day(generated_at)
+    if day:
+        facts.append(f"数据截至 {day}")
+
     names = [i.get("name") for i in items[:3] if i.get("name")]
     if names:
-        return title, _clip(f"Top3：{'、'.join(names)}")
+        facts.append(f"Top3：{'、'.join(names)}")
+
+    if facts:
+        return title, _clip(" · ".join(facts))
     return title, f"{city}的苍蝇馆子收录中，开城后第一时间更新榜单"
 
 

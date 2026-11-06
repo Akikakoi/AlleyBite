@@ -109,6 +109,27 @@ def test_rank_share_text_with_and_without_items():
     assert "收录中" in description
 
 
+def test_rank_share_text_carries_maturity_count_and_date():
+    _, description = rank_share_text(
+        "成都",
+        [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
+        maturity="deep",
+        city_rank_count=60,
+        generated_at="2026-10-23T16:30:00+00:00",
+    )
+    assert "全榜 60 家" in description
+    assert "证据充足" in description
+    assert "数据截至 10-24" in description
+    assert "Top3：A、B、C" in description
+    assert "D" not in description
+
+    _, thin = rank_share_text(
+        "西安", [], maturity="initial", city_rank_count=5
+    )
+    assert "全榜 5 家" in thin
+    assert "数据较薄 · 持续补证中" in thin
+
+
 # --- HTTP 接口 --------------------------------------------------------------
 
 def test_share_restaurant_endpoint_returns_html(client, session):
